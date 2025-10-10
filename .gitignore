@@ -1,0 +1,84 @@
+# ------------------------------
+# OS & editor cruft
+# ------------------------------
+.DS_Store
+Thumbs.db
+# Vim/Emacs/VS Code temp files
+*~
+*.swp
+*.swo
+.#*
+.vscode/
+.idea/
+
+# ------------------------------
+# R / RStudio
+# ------------------------------
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
+# Keep project .Rproj file if you use RStudio projects:
+# *.Rproj
+
+# OAuth tokens & secrets created by httr, etc.
+.httr-oauth
+# Environment files (commit an example instead: .Renviron.example)
+.Renviron
+
+# ------------------------------
+# R Markdown / knitr / Quarto artifacts
+# ------------------------------
+# Chunk caches & figures
+*_cache/
+cache/
+figure/
+# Quarto build artifacts
+.quarto/
+_freeze/
+# Common site outputs (enable if you build locally but don’t publish from this repo)
+_site/
+_book/
+docs/
+
+# ------------------------------
+# Dependency managers
+# ------------------------------
+# renv (keep renv.lock tracked!)
+renv/library/
+renv/staging/
+# packrat (legacy)
+packrat/
+.packrat/
+
+# ------------------------------
+# R package development (optional)
+# ------------------------------
+# Check outputs and built tarballs
+*.Rcheck/
+*.tar.gz
+# vignettes built artifacts
+inst/doc/
+# pkgdown site (if built locally)
+pkgdown/
+
+# ------------------------------
+# Data & large files (optional)
+# ------------------------------
+# Uncomment if you keep raw/untracked data locally
+# data-raw/
+# *.rds
+# *.RData
+# *.fst
+# *.feather
+# *.parquet
+# *.csv
+
+# ------------------------------
+# Compiled objects (rare in pure-R repos)
+# ------------------------------
+*.o
+*.so
+*.dll
+
