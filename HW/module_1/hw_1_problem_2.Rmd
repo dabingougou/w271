@@ -1,0 +1,337 @@
+---
+title: "HW1_problem_2"
+author: "Huibin Chang"
+date: "2025-08-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages('tidyverse')
+library(tidyverse)
+```
+
+
+```{r}
+#summary(cars)
+#data <- read_csv("data/Telco_Customer_Churn.csv")
+#head(data)
+telcom_churn <- read.csv("./data/Telco_Customer_Churn.csv", header=T,na.strings=c(""
+,"NA"))
+telcom_churn
+```
+
+```{r}
+# Quick structure + missingness overview
+glimpse(telcom_churn)
+telcom_churn %>% summarize(across(everything(), ~sum(is.na(.)), .names = "na_{.col}"))
+
+# Ensure key vars are correctly typed:
+# - Churn should be a factor with levels No/Yes
+# - SeniorCitizen is commonly coded 0/1; make it a factor "No"/"Yes"
+telcom_churn <- telcom_churn %>%
+  mutate(
+    Churn = factor(Churn, levels = c("No","Yes")),
+    SeniorCitizen = if (is.numeric(SeniorCitizen)) {
+      factor(SeniorCitizen, levels = c(0,1), labels = c("No","Yes"))
+    } else {
+      factor(SeniorCitizen, levels = c("No","Yes"))
+    },
+     senior_int = case_when(
+      SeniorCitizen %in% c(1, "1", "Yes", "yes", TRUE) ~ 1L,
+      SeniorCitizen %in% c(0, "0", "No",  "no",  FALSE) ~ 0L,
+      TRUE ~ NA_integer_
+    ),
+    churn_int = case_when(
+      Churn %in% c("Yes","yes", 1, "1", TRUE) ~ 1L,
+      Churn %in% c("No", "no",  0, "0", FALSE) ~ 0L,
+      TRUE ~ NA_integer_
+    )
+  )
+
+# Use the integer indicators for NA filtering
+telcom_churn_clean <- telcom_churn %>%
+  filter(!is.na(senior_int), !is.na(churn_int))
+
+# Sanity check: counts + overall churn rate
+telcom_churn_clean %>%
+  summarise(
+    n = n(),
+    seniors = sum(senior_int == 1),
+    non_seniors = sum(senior_int == 0),
+    churn_rate_overall = mean(churn_int)
+  )
+
+
+# Sanity checks
+# Churn - yes and no
+summary(telcom_churn_clean$Churn)
+# Groups - senior and non-senior
+summary(telcom_churn_clean$SeniorCitizen)
+
+```
+## 2.2
+```{r}
+n <- nrow(telcom_churn_clean)
+#n_churn <- sum(telcom_churn_clean$Churn == "Yes")
+n_churn <- sum(telcom_churn_clean$churn_int)
+
+pi_hat <- n_churn / n
+pi_hat
+alpha <-  0.05
+q <- qnorm((1 - alpha/2))
+
+
+var_hat <- (pi_hat * (1 - pi_hat)) / n
+var_hat
+se = sqrt(var_hat)
+se
+
+ci_lower <- pi_hat - q * se
+ci_upper <- pi_hat + q * se
+
+ci_lower
+ci_upper
+
+
+binom.test(n_churn, n)$conf.int                  # Clopper–Pearson
+prop.test(n_churn, n, correct = TRUE)$conf.int  
+```
+## Including Plots
+
+
+```{r}
+library(ggplot2)
+
+# Counts
+ggplot(telcom_churn_clean, aes(x = SeniorCitizen, fill = Churn)) +
+  geom_bar() +
+  labs(title = "Counts: Churn by Senior Status", x = "Senior Citizen", y = "Count")
+
+# Proportions within seniority groups
+ggplot(telcom_churn_clean, aes(x = SeniorCitizen, fill = Churn)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Proportion Churned by Senior Status", x = "Senior Citizen", y = "Proportion")
+
+# senior_int: 1 = Senior, 0 = Non-senior
+churn_by_senior <- telcom_churn_clean %>%
+  group_by(senior_int) %>%
+  summarise(
+    n = n(),
+    churn_rate = mean(churn_int),   # proportion churned
+    .groups = "drop"
+  ) %>%
+  mutate(group = if_else(senior_int == 1L, "Senior", "Non-senior"))
+
+churn_by_senior
+
+library(scales)
+
+ggplot(churn_by_senior, aes(x = group, y = churn_rate)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = percent(churn_rate, accuracy = 0.1)),
+            vjust = -0.3, size = 3.8) +
+  scale_y_continuous(labels = percent_format(),
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Churn rate by senior status", x = NULL, y = "Churn rate")
+```
+```{r}
+tab <- telcom_churn_clean %>%
+  count(SeniorCitizen, Churn) %>%
+  pivot_wider(names_from = Churn, values_from = n, values_fill = 0) %>%
+  arrange(SeniorCitizen)
+
+tab
+
+# Group totals and churn probabilities
+group_rates <- telcom_churn_clean %>%
+  group_by(SeniorCitizen) %>%
+  summarize(
+    n = n(),
+    churn_yes = sum(Churn == "Yes"),
+    churn_rate = churn_yes / n,
+    .groups = "drop"
+  )
+
+group_rates
+
+```
+
+
+```{r}
+ct_table <- with(telcom_churn_clean, table(
+  `Senior status` = ifelse(senior_int == 1L, "Senior", "Non-senior"),
+  `Churn status`  = ifelse(churn_int  == 1L, "Yes",    "No")
+))
+ct_table   # prints with both dim names labeled
+
+# Row proportions (churn rate by Senior status)
+prop_by_row <- prop.table(ct_table, margin = 1)
+prop_by_row  # rows sum to 1; look at [, "Yes"] for churn %
+
+# Add totals
+ct_table_sum <- addmargins(ct_table)
+
+# Cross-check your diff from the table directly
+#diff_check <- prop_by_row["Senior", "Yes"] - prop_by_row["Non-senior", "Yes"]
+#all.equal(as.numeric(diff_check), as.numeric(diff_rate))  # should be TRUE
+
+## (b) Churn probabilities by group + difference (Senior minus Non-senior)
+group_rates <- telcom_churn_clean %>%
+  group_by(senior_int) %>%
+  summarise(
+    n          = n(),
+    churn_yes  = sum(churn_int == 1L),
+    churn_rate = churn_yes / n,
+    .groups    = "drop"
+  ) %>%
+  mutate(group = if_else(senior_int == 1L, "Senior", "Non-senior")) %>%
+  select(group, n, churn_yes, churn_rate)
+
+group_rates
+
+rate_senior <- group_rates$churn_rate[group_rates$group == "Senior"]
+rate_non    <- group_rates$churn_rate[group_rates$group == "Non-senior"]
+diff_rate   <- rate_senior - rate_non
+
+sprintf("Senior churn rate: %.2f%% | Non-senior: %.2f%% | Difference: %.2f percentage points",
+        100*rate_senior, 100*rate_non, 100*diff_rate)
+
+```
+
+
+
+## 2.5
+```{r}
+ct_table
+count_senior_churn <- ct_table["Senior", "Yes"]
+
+count_senior_nchurn <- ct_table["Senior", "No"]
+
+count_nsenior_churn <- ct_table["Non-senior", "Yes"]
+
+count_nsenior_nchurn <- ct_table["Non-senior", "No"]
+
+# Num seniors
+n_seniors <- count_senior_churn + count_senior_nchurn
+
+# Num non-seniors
+n_nseniors <- count_nsenior_churn + count_nsenior_nchurn
+
+# Num churns
+n_churns <- count_senior_churn + count_nsenior_churn
+
+# Num no churns
+n_nchurns <- count_senior_nchurn + count_nsenior_nchurn
+
+stopifnot(n_seniors + n_nseniors == sum(ct_table))     # partitions the whole sample
+stopifnot(n_churns  + n_nchurns  == sum(ct_table))     # columns sum
+
+
+pi_hat_senior <- count_senior_churn / n_seniors
+
+pi_hat_nsenior <- count_nsenior_churn / n_nseniors
+
+pi_hat_senior
+pi_hat_nsenior
+
+# Wald CI
+pi_diff_hat <- pi_hat_senior - pi_hat_nsenior
+pi_diff_hat
+
+pi_diff_hat_se <- sqrt((pi_hat_senior * (1 - pi_hat_senior)) / n_seniors +
+                         (pi_hat_nsenior * (1 - pi_hat_nsenior)) / n_nseniors
+                      ) 
+pi_diff_hat_se
+
+wald_pi_diff_ci_lower <- pi_diff_hat - q * pi_diff_hat_se
+
+wald_pi_diff_ci_upper <- pi_diff_hat + q * pi_diff_hat_se
+
+
+
+
+# Agresti and Caffo CI
+pi_hat_senior_ac <- (count_senior_churn + 1) / (n_seniors + 2)
+
+pi_hat_nsenior_ac <- (count_nsenior_churn + 1) / (n_nseniors + 2)
+
+pi_diff_hat_ac <- pi_hat_senior_ac - pi_hat_nsenior_ac
+pi_diff_hat_ac
+
+pi_diff_hat_ac_se <- sqrt((pi_hat_senior_ac * (1 - pi_hat_senior_ac)) / (n_seniors + 2) +
+                         (pi_hat_nsenior_ac * (1 - pi_hat_nsenior_ac)) / (n_nseniors + 2)
+                      )
+  
+ac_pi_diff_ci_lower <- pi_diff_hat_ac - q * pi_diff_hat_ac_se
+
+ac_pi_diff_ci_upper <- pi_diff_hat_ac + q * pi_diff_hat_ac_se
+
+
+ac_pi_diff_ci_upper - ac_pi_diff_ci_lower 
+wald_pi_diff_ci_upper - wald_pi_diff_ci_lower 
+
+prop.test(x = c(count_senior_churn, count_nsenior_churn),
+          n = c(n_seniors, n_nseniors),
+          correct = TRUE)
+
+
+
+tibble::tibble(
+  metric = "Diff (Senior − Non-senior)",
+  point  = pi_diff_hat,
+  Wald_L = wald_pi_diff_ci_lower, Wald_U = wald_pi_diff_ci_upper,
+  AC_L   = ac_pi_diff_ci_lower,   AC_U   = ac_pi_diff_ci_upper
+)
+```
+
+## Hypothesis testing
+```{r}
+# To compute the p-value for hypothesis testing, we make use previously assigned variables
+# And to be conservative, we us Agresti-Caffo sample S.E. to compute the z value
+
+z_value <- pi_diff_hat / pi_diff_hat_ac_se
+z_value
+p_value <- 2 * (1 - pnorm(abs(z_value)))
+p_value
+
+p_value < 0.001
+# So even given a significance level of (1 - 0.001 = 99.9%),
+# We can reject the null that there is no difference.
+```
+
+## Relative risk
+```{r}
+rr_hat <- pi_hat_senior / pi_hat_nsenior 
+rr_hat
+var_log_rr <- (1 / count_senior_churn) - (1 / n_seniors) + (1 / count_nsenior_churn) - (1 / n_nseniors)
+se_log_rr <- sqrt(var_log_rr)
+log_rr_ci_lower <- log(rr_hat) - q * se_log_rr
+
+log_rr_ci_upper <- log(rr_hat) + q * se_log_rr
+
+rr_ci_lower <- exp(log_rr_ci_lower)
+rr_ci_upper <- exp(log_rr_ci_upper)
+#log(rr_hat)
+#se_log_rr
+```
+
+## Odds ratio
+```{r}
+odds_senior <- pi_hat_senior / (1 - pi_hat_senior)
+odds_nsenior <- pi_hat_nsenior / (1 - pi_hat_nsenior)
+
+odds_ratio <- odds_senior / odds_nsenior
+
+var_log_or <- (1 / count_senior_churn) + (1 / count_senior_nchurn) + (1 / count_nsenior_churn) + (1 / count_nsenior_nchurn)
+se_log_or <- sqrt(var_log_or)
+
+log_or_ci_upper <- log(odds_ratio) + q * se_log_or
+log_or_ci_lower <- log(odds_ratio) - q * se_log_or
+
+or_ci_upper <- exp(log_or_ci_upper)
+or_ci_lower <- exp(log_or_ci_lower)
+
+```
+

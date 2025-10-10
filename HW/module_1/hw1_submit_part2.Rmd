@@ -1,0 +1,282 @@
+---
+title: "HW1_problem_2"
+author: "Huibin Chang"
+date: "2025-08-30"
+output: pdf_document
+---
+
+# Problem 2: Customer churn 
+
+```{r all, echo=TRUE, message=FALSE, warning=FALSE}
+# ---- Setup ----
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(scales)
+```
+
+## 2.1 Data cleaning
+I kept all the columns although the analysis in this problem is on Churn and Senior status.
+For both SeniorCitizen and Churn, I created an 0-1 integer variable for ease of analysis.
+```{r}
+# ---- 2.1 Data preprocessing ----
+telcom_churn <- read.csv("./data/Telco_Customer_Churn.csv", header=TRUE, na.strings=c("","NA"))
+glimpse(telcom_churn)
+#telcom_churn %>% summarize(across(everything(), ~sum(is.na(.)), .names = "na_{.col}"))
+
+telcom_churn <- telcom_churn %>%
+  mutate(
+    Churn = factor(Churn, levels = c("No","Yes")),
+    SeniorCitizen = if (is.numeric(SeniorCitizen)) {
+      factor(SeniorCitizen, levels = c(0,1), labels = c("No","Yes"))
+    } else {
+      factor(SeniorCitizen, levels = c("No","Yes"))
+    },
+    senior_int = case_when(
+      SeniorCitizen %in% c(1, "1", "Yes", "yes", TRUE) ~ 1L,
+      SeniorCitizen %in% c(0, "0", "No",  "no",  FALSE) ~ 0L,
+      TRUE ~ NA_integer_
+    ),
+    churn_int = case_when(
+      Churn %in% c("Yes","yes", 1, "1", TRUE) ~ 1L,
+      Churn %in% c("No", "no",  0, "0", FALSE) ~ 0L,
+      TRUE ~ NA_integer_
+    )
+  )
+
+telcom_churn_clean <- telcom_churn %>%
+  filter(!is.na(senior_int), !is.na(churn_int))
+
+# Sanity checks 
+summary(telcom_churn_clean$Churn)
+summary(telcom_churn_clean$SeniorCitizen)
+
+telcom_churn_clean %>%
+  summarise(
+    n = n(),
+    seniors = sum(senior_int == 1),
+    non_seniors = sum(senior_int == 0),
+    churn_rate_overall = mean(churn_int)
+  )
+```
+
+
+\newpage
+
+## 2.2 Probability of custumer churn
+```{r}
+# ---- 2.2 Probability of customer churn ----
+n <- nrow(telcom_churn_clean)
+n_churn <- sum(telcom_churn_clean$churn_int)
+pi_hat <- n_churn / n
+alpha <-  0.05
+q <- qnorm((1 - alpha/2))
+var_hat <- (pi_hat * (1 - pi_hat)) / n
+se <- sqrt(var_hat)
+ci_lower <- pi_hat - q * se
+ci_upper <- pi_hat + q * se
+# Also using other methods to verify my own calculation.
+binom.test(n_churn, n)$conf.int
+prop.test(n_churn, n, correct = TRUE)$conf.int
+
+```
+
+## 2.2 Comment
+The following code chunk shows that the probability (MLE estimator) $\hat{\pi}$ is `r round(pi_hat, 3)` with a 95% CI between `r round(ci_lower, 3)` and `r round(ci_upper, 3)`. Because the CI does not cover 0, $\hat{\pi}$ is therefore **statistically** different from 0. We can of course carry out a 2-sided hypothesis testing and the conclusion is the same.
+
+
+
+\newpage
+## 2.3 Bar plots
+I created 2 bar plots, one showing counts and the other percentage of churn for each group. Based on these plots, there is a visually obvious difference between the senior and non-senior groups in terms of churn.
+
+```{r}
+
+# ---- 2.3 Plots (two-bar summary) ----
+library(ggplot2)
+
+ggplot(telcom_churn_clean, aes(x = SeniorCitizen, fill = Churn)) +
+  geom_bar() +
+  labs(title = "Counts: Churn by Senior Status", x = "Senior Citizen", y = "Count")
+
+
+churn_by_senior <- telcom_churn_clean %>%
+  group_by(senior_int) %>%
+  summarise(
+    n = n(),
+    churn_rate = mean(churn_int),
+    .groups = "drop"
+  ) %>%
+  mutate(group = if_else(senior_int == 1L, "Senior", "Non-senior"))
+
+churn_by_senior
+
+ggplot(churn_by_senior, aes(x = group, y = churn_rate)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = percent(churn_rate, accuracy = 0.1)),
+            vjust = -0.3, size = 3.8) +
+  scale_y_continuous(labels = percent_format(),
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Churn rate by senior status", x = NULL, y = "Churn rate")
+
+
+```
+
+\newpage
+## 2.4 Contingency table
+```{r}
+# ---- 2.4 Tables + group rates  ----
+ct_table <- with(telcom_churn_clean, table(
+  `Senior status` = ifelse(senior_int == 1L, "Senior", "Non-senior"),
+  `Churn status`  = ifelse(churn_int  == 1L, "Yes",    "No")
+))
+#ct_table
+#prop_by_row <- prop.table(ct_table, margin = 1)
+#prop_by_row
+ct_table_sum <- addmargins(ct_table)
+
+group_rates <- telcom_churn_clean %>%
+  group_by(senior_int) %>%
+  summarise(
+    n          = n(),
+    churn_yes  = sum(churn_int == 1L),
+    churn_rate = churn_yes / n,
+    .groups    = "drop"
+  ) %>%
+  mutate(group = if_else(senior_int == 1L, "Senior", "Non-senior")) %>%
+  select(group, n, churn_yes, churn_rate)
+#group_rates
+
+rate_senior <- group_rates$churn_rate[group_rates$group == "Senior"]
+rate_non    <- group_rates$churn_rate[group_rates$group == "Non-senior"]
+diff_rate   <- rate_senior - rate_non
+sprintf("Senior churn rate: %.2f%% | Non-senior: %.2f%% | Difference: %.2f percentage points",
+        100*rate_senior, 100*rate_non, 100*diff_rate)
+ct_table_sum
+```
+## 2.4 Comment
+Based on the contingency table and the probabilities, there is a pratical difference bewtween the 2 groups in churn.
+
+\newpage
+## 2.5 two confidence intervals
+```{r}
+# ---- 2.5 Wald & Agresti–Caffo ----
+ct_table
+count_senior_churn <- ct_table["Senior", "Yes"]
+count_senior_nchurn <- ct_table["Senior", "No"]
+count_nsenior_churn <- ct_table["Non-senior", "Yes"]
+count_nsenior_nchurn <- ct_table["Non-senior", "No"]
+
+n_seniors <- count_senior_churn + count_senior_nchurn
+n_nseniors <- count_nsenior_churn + count_nsenior_nchurn
+n_churns <- count_senior_churn + count_nsenior_churn
+n_nchurns <- count_senior_nchurn + count_nsenior_nchurn
+
+stopifnot(n_seniors + n_nseniors == sum(ct_table))
+stopifnot(n_churns  + n_nchurns  == sum(ct_table))
+
+pi_hat_senior <- count_senior_churn / n_seniors
+pi_hat_nsenior <- count_nsenior_churn / n_nseniors
+pi_hat_senior; pi_hat_nsenior
+
+pi_diff_hat <- pi_hat_senior - pi_hat_nsenior
+pi_diff_hat
+
+pi_diff_hat_se <- sqrt((pi_hat_senior * (1 - pi_hat_senior)) / n_seniors +
+                         (pi_hat_nsenior * (1 - pi_hat_nsenior)) / n_nseniors) 
+pi_diff_hat_se
+
+wald_pi_diff_ci_lower <- pi_diff_hat - q * pi_diff_hat_se
+wald_pi_diff_ci_upper <- pi_diff_hat + q * pi_diff_hat_se
+
+pi_hat_senior_ac <- (count_senior_churn + 1) / (n_seniors + 2)
+pi_hat_nsenior_ac <- (count_nsenior_churn + 1) / (n_nseniors + 2)
+pi_diff_hat_ac <- pi_hat_senior_ac - pi_hat_nsenior_ac
+pi_diff_hat_ac
+
+pi_diff_hat_ac_se <- sqrt((pi_hat_senior_ac * (1 - pi_hat_senior_ac)) / (n_seniors + 2) +
+                         (pi_hat_nsenior_ac * (1 - pi_hat_nsenior_ac)) / (n_nseniors + 2))
+ac_pi_diff_ci_lower <- pi_diff_hat_ac - q * pi_diff_hat_ac_se
+ac_pi_diff_ci_upper <- pi_diff_hat_ac + q * pi_diff_hat_ac_se
+
+ac_pi_diff_ci_upper - ac_pi_diff_ci_lower 
+wald_pi_diff_ci_upper - wald_pi_diff_ci_lower 
+
+# Also using existing method to verify my own calculation
+prop.test(x = c(count_senior_churn, count_nsenior_churn),
+          n = c(n_seniors, n_nseniors),
+          correct = TRUE)
+
+#tibble::tibble(
+#  metric = "Diff (Senior - Non-senior)",
+#  point  = pi_diff_hat,
+#  Wald_L = wald_pi_diff_ci_lower, Wald_U = wald_pi_diff_ci_upper,
+#  AC_L   = ac_pi_diff_ci_lower,   AC_U   = ac_pi_diff_ci_upper
+#)
+```
+## 2.5 Comment
+The MLE estimates for senior churn probability is `r round(pi_hat_senior, 3)` and `r round(pi_hat_nsenior, 3)` for non-seniors. The estimate for difference is therefore
+`r round(pi_diff_hat, 5)`. 
+
+The Wald CI ($\alpha = 0.05$) is between `r round(wald_pi_diff_ci_lower, 5)` and `r round(wald_pi_diff_ci_upper, 5)`.
+
+For Agresti-Caffo CI, the adjusted difference (according to the textbook and the async) is `r round(pi_diff_hat_ac, 5)`, and the Agresti-Caffo CI is between `r round(ac_pi_diff_ci_lower, 5)` and `r round(ac_pi_diff_ci_upper, 5)`.
+
+\newpage
+## 2.6 Hypothesis testing
+```{r}
+# ---- 2.6 Hypothesis testing ----
+z_value <- pi_diff_hat / pi_diff_hat_se
+z_value
+p_value <- 2 * (1 - pnorm(abs(z_value)))
+p_value
+p_value < 0.001
+# So even given a significance level of (1 - 0.001 = 99.9%),
+# We can reject the null that there is no difference.
+``` 
+## 2.6 Comment
+Given the null hypothesis, the test statistic is `r round(z_value, 2)` and using the limiting distribution (Gaussian), its
+corresponding (two-sided) p-value is `r round(p_value, 8)`. Because the test statistic is far beyond the critical value, we reject the null in favor of the alternative.
+
+
+\newpage
+## 2.7 Relative risk (rr)
+```{r}
+# ---- 2.7 Relative risk ----
+rr_hat <- pi_hat_senior / pi_hat_nsenior 
+rr_hat
+var_log_rr <- (1 / count_senior_churn) - (1 / n_seniors) + (1 / count_nsenior_churn) - (1 / n_nseniors)
+se_log_rr <- sqrt(var_log_rr)
+log_rr_ci_lower <- log(rr_hat) - q * se_log_rr
+log_rr_ci_upper <- log(rr_hat) + q * se_log_rr
+rr_ci_lower <- exp(log_rr_ci_lower)
+rr_ci_upper <- exp(log_rr_ci_upper)
+```
+## 2.7 Comment
+The relative risk is `r round(rr_hat, 3)`, with a 95% CI (calculated first using log odds then exponentiate) between `r round(rr_ci_lower, 3)` and `r round(rr_ci_upper, 3)`. 
+
+That is the senior group is 177% as likely as non-senior group to churn, or that the senior group is 77% more likely to churn compared to the non-senior group. 
+
+This is consistent with findings from previous parts where the senior churn estimate is `r round(pi_hat_senior, 3)` and the the non-senior churn estimate is `r round(pi_hat_nsenior, 3)`
+
+\newpage
+## 2.8 Odds ratio
+```{r}
+# ---- 2.8 Odds ratio  ----
+odds_senior <- pi_hat_senior / (1 - pi_hat_senior)
+odds_nsenior <- pi_hat_nsenior / (1 - pi_hat_nsenior)
+odds_ratio <- odds_senior / odds_nsenior
+var_log_or <- (1 / count_senior_churn) + (1 / count_senior_nchurn) + (1 / count_nsenior_churn) + (1 / count_nsenior_nchurn)
+se_log_or <- sqrt(var_log_or)
+log_or_ci_upper <- log(odds_ratio) + q * se_log_or
+log_or_ci_lower <- log(odds_ratio) - q * se_log_or
+or_ci_upper <- exp(log_or_ci_upper)
+or_ci_lower <- exp(log_or_ci_lower)
+```
+## 2.8 Comment
+Odds (MLE) for senior to churn: `r round(odds_senior, 3)`. 
+
+Odds (MLE) for non-senior to churn: `r round(odds_nsenior, 3)`.
+
+The odds ratio (MLE) is  `r round(odds_ratio, 3)`.
+
+The 95% CI for odds ratio is (calculated first using log then exponentiate) between `r round(or_ci_lower, 3)` and `r round(or_ci_upper, 3)`.

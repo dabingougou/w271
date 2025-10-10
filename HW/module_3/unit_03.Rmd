@@ -1,0 +1,476 @@
+---
+title : 'W271 Assignment 3 Submission'
+author: Huibin Chang
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r load packages, message=FALSE}
+library(tidyverse)
+```
+
+
+# Customer churn study: **Part-3** (100 Points)
+
+**In my submitted homework, each question is separated by a pagebreak, and there is a subtitle indicating the start of the answer for each question.**
+
+In the last two homework assignments, you initiated modeling a binary variable and used logistic regression to study the churn tendencies of customers.
+
+Now, in Part-3, we're going to explore different interactions, transformations, and categorical explanatory variables to create a more comprehensive model.
+
+```{r load of the data}
+telcom_churn <- read.csv("./data/Telco_Customer_Churn.csv", header=T,na.strings=c("","NA")) 
+```
+
+
+For the remainder of this section, pay particular attention to all variables. 
+
+\pagebreak 
+## Data Preprocessing (5 Points)
+
+In this section, Convert variables as needed, and manage any missing values.
+
+### Answer
+#### Handling missing values
+In the code block below, I first check missing values for each column in the data
+frame. Since there are only 11 missing values in **TotalCharges**, I dropped these missing values
+because the number is small compared to the entire sample. 
+
+#### Data type
+Categorical and binary variables are first checked for unique values then turned into R factor class. 
+
+#### Process data and sanity check
+I saved the processed and cleaned data to **telcom_churn_clean** and use glimpse() and summary to look at the dataframe and the distribution of variables. **glimpse()** are commented out later to declutter the output.
+```{r}
+library(tidyverse)
+#glimpse(telcom_churn)
+
+telcom_churn %>% 
+  summarize(across(everything(), ~ sum(is.na(.))))
+
+# Check unique values of categorical variables
+cate_vars <- c("Churn", "SeniorCitizen", "gender")
+telcom_churn %>%
+  reframe(across(all_of(cate_vars), unique))
+
+unique(telcom_churn$Churn)
+unique(telcom_churn$SeniorCitizen)
+class(telcom_churn$SeniorCitizen)
+
+telcom_churn_clean <-
+  telcom_churn %>%
+    filter(!is.na(TotalCharges)) %>%
+    mutate(across(all_of(cate_vars), as.factor))
+
+# glimpse(telcom_churn_clean)
+summary(telcom_churn_clean)
+```
+
+
+\newpage 
+## Estimate a logistic regression (10 Points)
+
+Estimate the following binary logistic regressions and report the results in a table using stargazer package.
+
+$$
+  \begin{aligned}
+    Churn = \beta_{0} & + \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen +\beta_{5} gender +  e \quad \text{(Model 1)} \\ 
+    Churn = \beta_{0} & + \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen +\beta_{5} gender \quad \quad \quad\text{(Model 2)} \\       & + \beta_{6} tenure^2 + \beta_{7} MonthlyCharges^2 + \beta_{8} TotalCharges^2 + e\\
+    Churn = \beta_{0} &+ \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen +\beta_{5} gender \quad  \quad \quad \text{(Model 3)} \\ 
+      & +  \beta_{6} tenure^2 + \beta_{7} MonthlyCharges^2 + \beta_{8} TotalCharges^2 \\ 
+      & + {\beta}_9 SeniorCitizen \times tenure + {\beta}_{10} SeniorCitizen \times MonthlyCharges \\ 
+      & + \beta_{11} SeniorCitizen \times TotalCharges+ {\beta}_{12} gender \times tenure \\
+      & + {\beta}_{13} gender \times MonthlyCharges + \beta_{14} gender \times TotalCharges      + e
+  \end{aligned}
+$$
+- where  $SeniorCitizen \times MonthlyCharges$ denotes the interaction between `SeniorCitizen` and `MonthlyCharges` variables.
+
+### Answer
+In the code block below, the three models are estimated using **glm()** and the results are reported using **stargazer()**.
+
+```{r}
+#install.packages("stargazer")
+library(stargazer)
+
+model_1 <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen + gender,
+               data = telcom_churn_clean,
+               family = binomial(link = "logit"))
+
+# summary(model_1)
+
+model_2 <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen + gender
+                          + I(tenure^2) + I(MonthlyCharges^2) + I(TotalCharges^2),
+               data = telcom_churn_clean,
+               family = binomial(link = "logit"))
+
+# summary(model_2)
+
+
+model_3 <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen + gender
+                          + I(tenure^2) + I(MonthlyCharges^2) + I(TotalCharges^2) 
+                          + SeniorCitizen:tenure + SeniorCitizen:MonthlyCharges
+                          + SeniorCitizen:TotalCharges + gender:tenure
+                          + gender:MonthlyCharges + gender:TotalCharges,
+               data = telcom_churn_clean,
+               family = binomial(link = "logit"))
+
+# summary(model_3)
+
+
+stargazer(model_1, model_2, model_3,
+          type = "text",
+          title = "Comparison of Logistic Regression Models",
+          dep.var.labels = "Customer Churn",
+          covariate.labels = c("Tenure", "Monthly Charges", "Total Charges",
+                               "Senior Citizen (Yes)", "Gender (Male)",
+                               "Tenure Squared", "Monthly Charges Squared",
+                               "Total Charges Squared",
+                               "Senior Citizen * Tenure",
+                               "Senior Citizen * Monthly Charges",
+                               "Senior Citizen * Total Charges",
+                               "Gender * Tenure",
+                               "Gender * Monthly Charges",
+                               "Gender * Total Charges"))
+
+```
+
+\newpage
+## Test a hypothesis: linear effects (15 Points)
+
+Using `Model 1`, test the hypothesis of linear effects of variables on customer churn using a likelihood ratio test.
+
+### Answer
+
+The model is 
+$$P_i = \frac{e^V}{1 + e^V}$$
+Hypothesis testing: 
+
+$$H_o: V = constant + e$$
+
+$$H_a: V \text{ as specified model 1}$$
+In answering this part, I first did the likelihood ratio test explicitly, then I used the deviance values given for free by the fitted model to verify that the log-likelihood (used to compute the asymptotically $\chi^2$) is correct. 
+
+To do that, I first estimated the **null model** which regress the dependent variable on a constant term only. Then I use the anova() method to carry out the likelihood-ratio test. In the test print-out, it displays the $\chi^2$ statistic, which I then compare to a manually computed value to double-check.
+
+The test statistic is 1829.751 (checked in two ways shown in the code block), with degree of freedom equaling 5, and its corresponding p-value is approximately 0.
+
+```{r}
+
+# Method 1
+model_null <- glm(formula = Churn ~ 1, 
+                  data = telcom_churn_clean, 
+                  family = binomial(link = "logit"))
+
+summary(model_null)
+
+
+anova(model_null, model_1, test = "LRT")
+
+
+# Method 2
+#summary(model_1)
+deviance(model_1)
+g2 <- deviance(model_null) - deviance(model_1)
+g2
+```
+
+\newpage
+## Test a hypothesis: Non linear effect (15 Points)
+
+Perform a likelihood ratio test to assess the hypothesis that $\beta_6 = 0$ or $\beta_7 = 0$ or $\beta_8 = 0$ within the context of `Model 2`. Interpret the implications of this test result in the context of the estimated `Model 2`.
+
+Then, test the same hypothesis in `Model 3` using a likelihood ratio test. Interpret what this test result means in the context of a model like what you have estimated in ` Model 3`. 
+
+
+### Answer
+The model is 
+$$P_i = \frac{e^V}{1 + e^V}$$
+
+
+#### Test of Model 2
+
+
+$\beta_i = 0$ for $i = 6, 7, 8$, so the **restricted model** is 
+
+$$
+ Churn = \beta_{0} + \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen +\beta_{5} gender + e \:\; \text{(Restricted Model 2)}
+$$
+
+Hypothesis
+
+
+$$H_o: \text{restricted model 2}$$
+
+$$H_a: \text{As specified in (full) model 2}$$
+Note that the restricted model_2 is the same as model_1 but I explicitly coded the restricted model_2 for clarity.
+
+Similar to the last part, I first did the likelihood ratio test by explicitly specifying a null-hypothesis model, doing the test; then verify by manually compute the $\chi^2$ statistic.
+
+```{r}
+model_2_restricted <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen + gender, 
+                          data = telcom_churn_clean,
+                          family = binomial(link = "logit"))
+
+#summary(model_2_restricted)
+
+anova(model_2_restricted, model_2, test = "LRT")
+
+# Double check
+#anova(model_1, model_2, test = "LRT")
+
+# Triple check by manually compute the difference of deviances
+deviance(model_1) - deviance(model_2)
+```
+
+
+**Interpretation**
+Based on the likelihood ratio test, we can reject the null (that the restricted model 2 is the true model) in favor of the alternative (full model 2).
+
+#### Test of Model 3
+
+Again I have specified the restricted model (null hypothesis), did the test, then verified using manually computed $\chi^2$ statistic. 
+
+
+$\beta_i = 0$ for $i = 6, 7, 8$, so the **restricted model** is 
+
+$$
+\begin{aligned}
+    Churn = \beta_{0} &+ \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen +\beta_{5} gender \quad  \quad \quad \text{(Model 3)} \\ 
+      & +  \beta_{6} tenure^2 + \beta_{7} MonthlyCharges^2 + \beta_{8} TotalCharges^2 \\ 
+      & + {\beta}_9 SeniorCitizen \times tenure + {\beta}_{10} SeniorCitizen \times MonthlyCharges \\ 
+      & + \beta_{11} SeniorCitizen \times TotalCharges+ {\beta}_{12} gender \times tenure \\
+      & + {\beta}_{13} gender \times MonthlyCharges + \beta_{14} gender \times TotalCharges      + e
+\end{aligned}
+$$
+```{r}
+model_3_restricted <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen + gender
+                          + SeniorCitizen:tenure + SeniorCitizen:MonthlyCharges
+                          + SeniorCitizen:TotalCharges + gender:tenure
+                          + gender:MonthlyCharges + gender:TotalCharges,
+               data = telcom_churn_clean,
+               family = binomial(link = "logit"))
+
+#summary(model_3_restricted)
+
+anova(model_3_restricted, model_3, test = "LRT")
+
+deviance(model_3_restricted) - deviance(model_3)
+```
+
+**Interpretation**
+Based on the likelihood ratio test, we can reject the null (the restricted model 3 is the true model) in favor of the full model 3.
+
+
+\newpage
+## Test a hypothesis: Total effect of gender (15 Points)
+Test the hypothesis that `gender` has no effect on the likelihood of churn, in  `Model 3`, using a likelihood ratio test. 
+
+### Answer
+Test that there is no effect of gender. So the restricted version of **Model 3** is 
+
+$$
+\begin{aligned}
+    Churn = \beta_{0} &+ \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen + 0 \quad  \quad \quad \text{(Restricted Model 3 - drop gender)} \\ 
+      & +  \beta_{6} tenure^2 + \beta_{7} MonthlyCharges^2 + \beta_{8} TotalCharges^2 \\ 
+      & + {\beta}_9 SeniorCitizen \times tenure + {\beta}_{10} SeniorCitizen \times MonthlyCharges \\ 
+      & + \beta_{11} SeniorCitizen \times TotalCharges+ 0  \\
+      & + e
+\end{aligned}
+$$
+
+Hence the null hypothesis, $H_o$ is given by the restricted model. The alternative hypothesis is the full model where coefficents of gender (linear, squared, and interaction terms) are not zero.
+
+
+**Interpretation of the results**
+
+The p-value is 0.049 (chisq stat 9.53 with degree of freedom 4). So it is marginally significant at $\alpha = 0.05$, but not statistically significant if we lower the value of $\alpha$.
+
+Hence the **marginally** reject the null that gender (linear, squared, interactions) are all zero, but the evidence is very weak. In practice, I would be more conservative and adopt a smaller $\alpha$, hence not reject the null.
+
+
+
+```{r}
+
+model_3_no_gender <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen 
+                          + I(tenure^2) + I(MonthlyCharges^2) + I(TotalCharges^2) 
+                          + SeniorCitizen:tenure + SeniorCitizen:MonthlyCharges
+                          + SeniorCitizen:TotalCharges,
+               data = telcom_churn_clean,
+               family = binomial(link = "logit"))
+
+summary(model_3_no_gender)
+
+anova(model_3_no_gender, model_3, test = "LRT")
+
+deviance(model_3_no_gender) - deviance(model_3)
+```
+
+
+\newpage
+## Senior V.S. non-senior customers (20 Points)
+
+Estimate a new model, `Model 4`, by excluding all insignificant variables from `Model 3`. Then, predict how the likelihood of churn changes for senior customers compared to non-senior customers, while keeping `tenure,` `MonthlyCharges,` and `TotalCharges` at their average values. 
+
+### Answer
+Here, because if I do not drop the marginally significant variables (at $\alpha = 0.05$), I will have to deal with choosing/fixing a gender value for prediction. 
+
+Also because the language of the problem statement was not explict on the value of $\alpha$, I dropped all insignificant variables at $\alpha = 0.01$
+
+The resulting model, **model 4** therefore is: 
+
+
+$$
+\begin{aligned}
+    Churn = \beta_{0} &+ \beta_{1} tenure + \beta_{2} MonthlyCharges +\beta_{3} TotalCharges + \beta_{4} SeniorCitizen + 0 \quad  \quad \quad \text{(Model 4)} \\ 
+      & +  \beta_{6} tenure^2 + 0 + \beta_{8} TotalCharges^2 \\ 
+      & + 0 + {\beta}_{10} SeniorCitizen \times MonthlyCharges \\ 
+      & + 0 + 0 \\
+      & +  + e
+  \end{aligned}
+$$
+
+**Results**
+The prediction results are printed out at the end of the following code chunk:
+
+0.1477 for non-senior customers, and 0.2794 for senior customers.
+
+```{r}
+model_4 <- glm(formula = Churn ~ tenure + MonthlyCharges + TotalCharges + SeniorCitizen  
+                          + I(tenure^2)   + I(TotalCharges^2) 
+                          + SeniorCitizen:MonthlyCharges,
+               data = telcom_churn_clean,
+               family = binomial(link = "logit"))
+
+summary(model_4)
+
+
+# get averages
+avg_tenure <- mean(telcom_churn_clean$tenure, na.rm = TRUE)
+avg_monthly <- mean(telcom_churn_clean$MonthlyCharges, na.rm = TRUE)
+avg_total <- mean(telcom_churn_clean$TotalCharges, na.rm = TRUE)
+
+# 2. Predict for non-senior customer
+prob_non_senior <- predict(
+  model_4,
+  newdata = data.frame(
+    tenure = avg_tenure,
+    MonthlyCharges = avg_monthly,
+    TotalCharges = avg_total,
+    SeniorCitizen = factor("0", levels = levels(telcom_churn_clean$SeniorCitizen))
+  ),
+  type = "response"
+)
+
+prob_senior <- predict(
+  model_4,
+  newdata = data.frame(
+    tenure = avg_tenure,
+    MonthlyCharges = avg_monthly,
+    TotalCharges = avg_total,
+    SeniorCitizen = factor("1", levels = levels(telcom_churn_clean$SeniorCitizen))
+  ),
+  type = "response"
+)
+
+# 4. Print results clearly
+cat("Predicted churn probability (Non-senior):", round(prob_non_senior, 4), "\n")
+cat("Predicted churn probability (Senior):    ", round(prob_senior, 4), "\n")
+cat("Difference (Senior - Non-senior):       ", round(prob_senior - prob_non_senior, 4), "\n")
+```
+
+
+
+\newpage
+## Construct a confidence interval (20 Points)
+Use `Model 4` and construct the 95% wald confidence interval for the churn probability for the customers with the following profile: 
+
+- $tenure  = 55.00$; 
+- $MonthlyCharges  =  89.86$; 
+- $TotalCharges = 3794.7$;
+- $SeniorCitizen = "No"$;
+
+and
+
+- $tenure  = 29.00$; 
+- $MonthlyCharges  = 18.25$;
+- $TotalCharges = 401.4$;
+- $SeniorCitizen = "Yes"$
+
+
+#### Answer
+The code chunk below predicted the probabilities using different methods (and results agree). 
+
+
+  - First I created a data frame as the new data (for prediction). 
+  - Then I used the fitted model to predict the 
+linear predictor (at the link level). 
+  - Next constructed Wald confidence intervals for the linear predictors. 
+  - Lastly plug in the Wald CIs for the linear predictor to the non-linear map.
+```{r}
+profiles <- data.frame(
+  tenure = c(55, 29),
+  MonthlyCharges = c(89.86, 18.25),
+  TotalCharges = c(3794.7, 401.4),
+  SeniorCitizen = factor(c("0","1"), 
+                         levels = levels(telcom_churn_clean$SeniorCitizen))
+)
+
+# Predict on logit scale with SEs
+# So what I get here is the linear predictor for the 2 profiles
+pred_link <- predict(model_4, newdata = profiles, type = "link", se.fit = TRUE)
+
+pred_link$fit
+pred_link
+# Wald 95% CI on logit scale
+q <- qnorm(0.975)
+lower_logit <- pred_link$fit - q * pred_link$se.fit
+upper_logit <- pred_link$fit + q * pred_link$se.fit
+
+# Transform to probability scale
+prob_est  <- plogis(pred_link$fit)
+prob_low  <- plogis(lower_logit)
+prob_high <- plogis(upper_logit)
+
+# Put results in a table
+wald_ci <- data.frame(
+  profile = c("Non-senior: tenure=55, MC=89.86, TC=3794.7",
+              "Senior: tenure=29, MC=18.25, TC=401.4"),
+  est_prob = round(prob_est, 4),
+  lower95  = round(prob_low, 4),
+  upper95  = round(prob_high, 4)
+)
+
+wald_ci
+
+```
+
+#### This following code chunk does the same Wald confidence intervals but following the approach shown in the async, manually compute the linear predictors, get the CIs for the linear predictors, than map to probabilities. This is should give same/very similar numbers as the first approach. 
+
+```{r}
+linear_pred_profile_1 <- predict(object = model_4, 
+                                 newdata = profiles[1, ], 
+                                 type = "link",
+                                 se = TRUE)
+linear_pred_profile_1
+
+linear_pred_profile_1_ci_upper <- linear_pred_profile_1$fit + q * linear_pred_profile_1$se
+
+linear_pred_profile_1_ci_lower <- linear_pred_profile_1$fit - q * linear_pred_profile_1$se
+
+pi_hat_1 <- exp(linear_pred_profile_1$fit) / (1 + exp(linear_pred_profile_1$fit))
+pi_hat_1
+
+pi_hat_1_ci_upper <- exp(linear_pred_profile_1_ci_upper) / (1 + exp(linear_pred_profile_1_ci_upper))
+pi_hat_1_ci_lower <- exp(linear_pred_profile_1_ci_lower) / (1 + exp(linear_pred_profile_1_ci_lower))
+```
+
+So in method 2, I manually calculated the CI (for probability) for profile 1 and it is exactly the same as the result form method 1. I don't have to repeat for method 1. Probability estimate for profile 1 is `r pi_hat_1`, and the 95% CI for this probability estimate is (`r pi_hat_1_ci_lower`, `r pi_hat_1_ci_upper`).
+
+
+
+
+
+
+
