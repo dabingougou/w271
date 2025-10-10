@@ -43,14 +43,67 @@ In the async lecture, Jeffrey says "BIC is in general more stringent than AIC or
 4. Finally, produce a plot that shows the AIC and BIC values on the y-axis and the number of estimated parameters on the x-axis. In the subtitle to your plot, note whether a relatively higher or lower AIC or BIC means that a model is performing better or worse (i.e. either "Higher values are better" or "Lower values are better"). What do you notice about these plots, and what does this tell you about the "stringency" of AIC vs. BIC?
 
 ```{r create white-noise data}
+y <- rnorm(100, mean = 0, sd = 1)
+plot(y,
+     xlab = "Index",
+     ylab = "Value of d",
+     main = "Generated data set d with 100 obs")
+
+
+input_vars <- list()
+
+for (i in 1:10) {
+  var <- rnorm(100, mean = 0, sd = 1)
+  
+  var_names <- paste0("x", i)
+  input_vars[[var_names]] <- var
+}
+
+x <- as_tibble(input_vars)
+
+d <- bind_cols(y = y, x)
 
 ```
 
 ```{r estimate 11 white-noise models}
+# First the intercept only model, or model0
 
+model0 <- lm(formula = y ~ 1,
+             data = d)
+
+#summary(model0)
+
+
+# Models 1-10: Adding one more X variable sequentially (k+1 parameters)
+# I write the model explicitly (not using loop) so that I can check more easily
+
+model1 <- lm(y ~ x1, data = d)
+model2 <- lm(y ~ x1 + x2, data = d)
+model3 <- lm(y ~ x1 + x2 + x3, data = d)
+model4 <- lm(y ~ x1 + x2 + x3 + x4, data = d)
+model5 <- lm(y ~ x1 + x2 + x3 + x4 + x5, data = d)
+model6 <- lm(y ~ x1 + x2 + x3 + x4 + x5 + x6, data = d)
+model7 <- lm(y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7, data = d)
+model8 <- lm(y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8, data = d)
+model9 <- lm(y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9, data = d)
+model10 <- lm(y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10, data = d)
+
+# Store models in a list
+models_list <- list(
+  model0 = model0, model1 = model1, model2 = model2, model3 = model3,
+  model4 = model4, model5 = model5, model6 = model6, model7 = model7,
+  model8 = model8, model9 = model9, model10 = model10
+)
 ```
 
 ```{r make results data with scores of AIC and BIC for each white-noise model}
+# Part 1.3: Make results data
+results_data_wide <- tibble(
+  parameters = 1:11,
+  # Extract AIC and BIC values for each model
+  aic = map_dbl(models_list, AIC),
+  bic = map_dbl(models_list, BIC)
+)
 
 ```
 
