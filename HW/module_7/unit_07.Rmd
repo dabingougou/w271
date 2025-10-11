@@ -19,6 +19,8 @@ library(lmtest)
 
 library(nycflights13)
 library(blsR)
+
+set.seed(1719)
 ```
 
 ```{r set themes}
@@ -41,6 +43,13 @@ In the async lecture, Jeffrey says "BIC is in general more stringent than AIC or
    2. When we created the data, we created a dataset that has a column called `parameters`, a column called `aic` and a column called `bic`.
    3. However, it is much more useful to have "tidy" data that has these values stacked. If you find yourself creating the dataset in the "wide" form that we have described above, you can use the `dplyr::pivot_longer` function to pivot your data into a tidy format. Specifically, we used this call `pivot_longer(cols = c('aic', 'bic'))` with our input data structure.
 4. Finally, produce a plot that shows the AIC and BIC values on the y-axis and the number of estimated parameters on the x-axis. In the subtitle to your plot, note whether a relatively higher or lower AIC or BIC means that a model is performing better or worse (i.e. either "Higher values are better" or "Lower values are better"). What do you notice about these plots, and what does this tell you about the "stringency" of AIC vs. BIC?
+
+\newpage
+
+### Answer
+Note that both the AIC and BIC values generally increase as the number of estimated parameters (k) increases. Since the outcome variable (y) is pure white noise, none of the input variables (x1 through x10) have a true relationship with it. The slight variation in the scores is due to chance correlations, but the overall trend is an increase because the improved fit (lower residual sum of squares) from adding random predictors is outweighed by the complexity penalty.
+
+Crucially, the BIC curve is consistently above the AIC curve and increases more rapidly. The penalty term in AIC is 2k, whereas the penalty in BIC is ln(n)⋅k. With a sample size of n=100, ln(100)≈4.6, meaning BIC's penalty is more than twice as large as AIC's penalty for each additional parameter. This means BIC imposes a harsher, more significant penalty for adding parameters. Therefore, BIC is more stringent in preferring the simpler model (model0 with k=1) in this scenario where added complexity does not lead to a substantially better fit. Both metrics correctly suggest that model0 is the preferred model.
 
 ```{r create white-noise data}
 y <- rnorm(100, mean = 0, sd = 1)
@@ -71,7 +80,7 @@ d <- bind_cols(y = y, x)
 model0 <- lm(formula = y ~ 1,
              data = d)
 
-#summary(model0)
+summary(model0)
 
 
 # Models 1-10: Adding one more X variable sequentially (k+1 parameters)
@@ -105,13 +114,32 @@ results_data_wide <- tibble(
   bic = map_dbl(models_list, BIC)
 )
 
+results_data <- pivot_longer(results_data_wide,
+             cols=c("aic", "bic"),
+             names_to = "ic",
+             values_to = "score")
+
 ```
 
 ```{r plot white-noise model data}
+results_data
 
+results_data %>%
+  ggplot(aes(
+    x = parameters,
+    y = score,
+    color = ic
+  )) + 
+  geom_line(linewidth = 1) + 
+  labs(
+    title = "AIC/BIC vs Num of Model Parameters\nLower values indicate closer fit (preferred)",
+    x = "The Number of Model Parameters",
+    y = "Value of AIC or BIC"
+  )
 ```
 
 > What do you note? Fill this in! 
+
 
 ## (2 points) Part-2
 
@@ -122,20 +150,102 @@ Now, suppose that you had data that, *in the population model* actually held a r
 - Produce a new dataset `resutls_data` that contains the AIC and BIC values from each of these models. 
 - Produce the same plot as you did before with the white noise series. Comment on what, if anything is similar or different between this plot, and the plot you created before. 
 
-```{r create data}
+\newpage
+### Answer
 
+In this plot, both AIC and BIC scores sharply decrease as the number of parameters increases from k=1 to k=11.
+
+The minimum of both curves occurs at k=11 (model10), which includes all ten x variables. This is the correctly specified population model, so the criteria are correctly identifying the most complex model as the best one.
+
+The difference between this plot and the white-noise plot is dramatic: in the white-noise case, both metrics penalized complexity because it didn't improve the fit; here, both metrics reward complexity because each additional parameter significantly improves the model's fit (i.e., significantly decreases the residual sum of squares).
+
+Similarity to the first plot: The BIC curve is still more stringent (always lies above the AIC curve, except at the minimum). However, because the improvement in fit (the decrease in the first term of the formula) is so large, this extra penalty is easily overcome, leading both metrics to select the most complex model.
+
+This demonstrates that when there is a true, significant relationship in the data, the goodness-of-fit term dominates the complexity penalty term, leading both AIC and BIC to favor the most complex (and correctly specified) model.
+
+```{r create data}
+# Because now we generate y as a function of Xs and the white noise, 
+# we shall generate the X first
+data_list_2 = list()
+
+wn <- rnorm (n = 100, mean = 0, sd = 1)
+
+for (i in 1:10) {
+  var <- rnorm(n = 100, mean = 0, sd = 1)
+  var_name <- paste0("x", i)
+  
+  data_list_2[[var_name]] <- var
+}
+
+x_2 = as_tibble(data_list_2)
+
+
+beta_vec <- seq(from = 0.1, to = 1.0, length.out = 10)
+beta_vec
+
+y_2 <- (as.matrix(x_2) %*% beta_vec) + wn
+
+d_2 <- bind_cols(y = y_2, x_2)
 ```
 
 ```{r estimate models}
+model0 <- lm(formula = y_2 ~ 1,
+             data = d_2)
 
+summary(model0)
+
+
+# Models 1-10: Adding one more X variable sequentially (k+1 parameters)
+# I write the model explicitly (not using loop) so that I can check more easily
+
+model1 <- lm(y_2~ x1, data = d_2)
+model2 <- lm(y_2~ x1 + x2, data = d_2)
+model3 <- lm(y_2~ x1 + x2 + x3, data = d_2)
+model4 <- lm(y_2~ x1 + x2 + x3 + x4, data = d_2)
+model5 <- lm(y_2~ x1 + x2 + x3 + x4 + x5, data = d_2)
+model6 <- lm(y_2~ x1 + x2 + x3 + x4 + x5 + x6, data = d_2)
+model7 <- lm(y_2~ x1 + x2 + x3 + x4 + x5 + x6 + x7, data = d_2)
+model8 <- lm(y_2~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8, data = d_2)
+model9 <- lm(y_2~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9, data = d_2)
+model10 <- lm(y_2 ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10, data = d_2)
+
+# Store models in a list
+models_list <- list(
+  model0 = model0, model1 = model1, model2 = model2, model3 = model3,
+  model4 = model4, model5 = model5, model6 = model6, model7 = model7,
+  model8 = model8, model9 = model9, model10 = model10
+)
 ```
 
 ```{r make results data with scores of AIC and BIC for each model}
+# Part 2.3: Make results data
+results_data_wide_2 <- tibble(
+  parameters = 1:11,
+  # Extract AIC and BIC values for each model
+  aic = map_dbl(models_list, AIC),
+  bic = map_dbl(models_list, BIC)
+)
+
+results_data_2 <- pivot_longer(results_data_wide_2,
+             cols=c("aic", "bic"),
+             names_to = "ic",
+             values_to = "score")
 
 ```
 
 ```{r plot model data}
-
+results_data_2 %>%
+  ggplot(aes(
+    x = parameters,
+    y = score,
+    color = ic
+  )) + 
+  geom_line(linewidth = 1) + 
+  labs(
+    title = "AIC/BIC vs Num of Model Parameters\nLower values indicate closer fit (preferred)\nDGP: y = wn + 0.1*x1 + 0.2*x2 + ... + 1.0*x10",
+    x = "The Number of Model Parameters",
+    y = "Value of AIC or BIC"
+  )
 ```
 
 > What do you notice about this plot and the model performance overall? 
@@ -160,8 +270,17 @@ Load the weather data in the same way as you did in the previous assignment, rec
      3 EWR      2013 W03                39.6            26.5 
 
 ```{r create weekly weather data}
+weather
+weather %>%
+  duplicates(key = origin, index = time_hour)
 
+#weather_ts <- 
+#  weather %>%
+#  as_tsibble(key = )
+  
 ```
+
+\newpage
 
 ## (2 points) Part-2: Fit Polynomial Regression Models 
 
