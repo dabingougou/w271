@@ -22,13 +22,19 @@ library(lmtest)
 library(nycflights13)
 library(blsR)
 
+#install.packages("splines2")
+library(splines2)
+library(slider) 
+
 set.seed(1719)
 ```
 
 ```{r set themes}
 theme_set(theme_minimal())
 ```
+Note: I used AI to help certain code chunks in Questions 2 and 3, but I went through every single line of code, fiddled with it, and made extensive edits.
 
+\newpage
 # Question-1: AIC and BIC and "Stringency" 
   
 ## (4 points) Part-1 
@@ -49,9 +55,12 @@ In the async lecture, Jeffrey says "BIC is in general more stringent than AIC or
 \newpage
 
 ### Answer
-Note that both the AIC and BIC values generally increase as the number of estimated parameters (k) increases. Since the outcome variable (y) is pure white noise, none of the input variables (x1 through x10) have a true relationship with it. The slight variation in the scores is due to chance correlations, but the overall trend is an increase because the improved fit (lower residual sum of squares) from adding random predictors is outweighed by the complexity penalty.
 
-Crucially, the BIC curve is consistently above the AIC curve and increases more rapidly. The penalty term in AIC is 2k, whereas the penalty in BIC is ln(n)⋅k. With a sample size of n=100, ln(100)≈4.6, meaning BIC's penalty is more than twice as large as AIC's penalty for each additional parameter. This means BIC imposes a harsher, more significant penalty for adding parameters. Therefore, BIC is more stringent in preferring the simpler model (model0 with k=1) in this scenario where added complexity does not lead to a substantially better fit. Both metrics correctly suggest that model0 is the preferred model.
+**(Code is after comments and answers)**
+
+Note that both the AIC and BIC values increase (worse fit) as the number of estimated parameters (k) increases. Since the outcome variable (y) is pure white noise, none of the input variables (x1 through x10) have a true relationship with it. The slight variation in the scores is likely by chance, but the overall trend is an increase because the improved fit (lower residual sum of squares) from adding random predictors is outweighed by the complexity penalty.
+
+Also, the BIC curve is consistently above the AIC curve and increases more rapidly. The penalty term in AIC is 2k, whereas the penalty in BIC is ln(n)⋅k. With a sample size of n=100, ln(100) is about 4.6, meaning BIC's marginal penalty of $k$ is more than twice as large as AIC's penalty for each additional parameter. This means BIC imposes a harsher significant penalty for adding parameters. Therefore, BIC is more stringent in preferring the simpler model (model0 with k=1) in this scenario where added complexity does not lead to a substantially better fit. AIC only mey lead us to model2 (3 parameters).
 
 ```{r create white-noise data}
 y <- rnorm(100, mean = 0, sd = 1)
@@ -78,7 +87,6 @@ d <- bind_cols(y = y, x)
 
 ```{r estimate 11 white-noise models}
 # First the intercept only model, or model0
-
 model0 <- lm(formula = y ~ 1,
              data = d)
 
@@ -141,8 +149,10 @@ results_data %>%
 ```
 
 > What do you note? Fill this in! 
+Already did this. 
 
 
+\newpage
 ## (2 points) Part-2
 
 Now, suppose that you had data that, *in the population model* actually held a relationship between the input features and the outcome feature. Specifically, suppose that for every unit increase in `x1` there was a `0.1` increase in the outcome, for every unit increase in `x2` there was a `0.2` increase in the outcome, $\dots$, for every unit increase in `x10` there was a `1.0` unit increase in the outcome. Suppose that if all `x1` $\dots$ `x10` were zero, that the outcome would have an expectation of zero, but with white-noise around it with $\mu = 0$ and $\sigma = 1$.  
@@ -152,16 +162,13 @@ Now, suppose that you had data that, *in the population model* actually held a r
 - Produce a new dataset `resutls_data` that contains the AIC and BIC values from each of these models. 
 - Produce the same plot as you did before with the white noise series. Comment on what, if anything is similar or different between this plot, and the plot you created before. 
 
-\newpage
 ### Answer
 
-In this plot, both AIC and BIC scores sharply decrease as the number of parameters increases from k=1 to k=11.
+In this plot (shown below in the code blocks), both AIC and BIC scores decrease as the number of parameters increases from k=1 (after k = 6) to k=11.
 
 The minimum of both curves occurs at k=11 (model10), which includes all ten x variables. This is the correctly specified population model, so the criteria are correctly identifying the most complex model as the best one.
 
-The difference between this plot and the white-noise plot is dramatic: in the white-noise case, both metrics penalized complexity because it didn't improve the fit; here, both metrics reward complexity because each additional parameter significantly improves the model's fit (i.e., significantly decreases the residual sum of squares).
-
-Similarity to the first plot: The BIC curve is still more stringent (always lies above the AIC curve, except at the minimum). However, because the improvement in fit (the decrease in the first term of the formula) is so large, this extra penalty is easily overcome, leading both metrics to select the most complex model.
+The difference between this plot and the white-noise plot is that in the white-noise case, both metrics penalized complexity because it *didn't* improve the fit; in this population model, both metrics reward complexity because each additional parameter significantly improves the model's fit (i.e., significantly decreases the residual sum of squares). Similarity to the first plot, the BIC curve is still more stringent.
 
 This demonstrates that when there is a true, significant relationship in the data, the goodness-of-fit term dominates the complexity penalty term, leading both AIC and BIC to favor the most complex (and correctly specified) model.
 
@@ -252,6 +259,7 @@ results_data_2 %>%
 
 > What do you notice about this plot and the model performance overall? 
 
+\newpage
 # Question-2: Weather in NYC 
  
  Our goals with this question are to: 
@@ -259,6 +267,7 @@ results_data_2 %>%
  - (If necessary) Clean up code that we've written before to re-use. This task of writing code, and then coming back and using it later is often overlooked in the MIDS program. Here's a chance to practice! 
  - Estimate several different polynomial regressions against a time series and evaluate at what point we have produced a model with "enough complexity" that the model evaluation scores cease to tell us that additional model parameters are improving the model fit. 
  
+\newpage
 ## (1 point) Part-1: Load the Weather Data 
 
 Load the weather data in the same way as you did in the previous assignment, recalling that there was some weird duplication of data for one of the days. Then, create an object, `weather_weekly` that aggregates the data to have two variables `average_temperature` and `average_dewpoint` at the year-week level, for each airport. After your aggregation is complete, you should have a `tsibble` that has the following shape: 
@@ -270,6 +279,10 @@ Load the weather data in the same way as you did in the previous assignment, rec
      1 EWR      2013 W01                34.3            19.4 
      2 EWR      2013 W02                42.7            33.3 
      3 EWR      2013 W03                39.6            26.5 
+
+### Answer
+
+The code below aggregates the weather data to the weekly level (yearweek) and computes the average temperature and dewpoint for each of the three airports (origin). The resulting tsibble is keyed by origin, which is necessary for the next step.
 
 ```{r create weekly weather data}
 weather
@@ -304,8 +317,8 @@ For each of the `average_temperature` and `average_dewpoint` create ten models t
 Additionally, you might recall that in 203, we actually recommended you away from using the `poly` function. That was a recommendation based on students' knowledge at the time, when we were considering fitting log and square root transformations of data. At this point, you can handle the additional complexity and can take the recommendation that `poly` is nice for working with polynomial translations of time. 
 
 ### Answer
-Used AI to help certain code chunks but I went through every single line of code and made 
-extensive edits.
+The code below first creates a numeric_week index starting at 0 to be used as the predictor in the poly() function. Models are then fitted by nesting the data by origin, allowing for iteratively estimate 10 polynomial models (degree p=1 to p=10) for each airport independently (I did it first by looping then adpated the functional coding style suggested by AI). 
+
 
 ```{r create a numeric_week variable with minimum value of zero}
 
@@ -406,7 +419,7 @@ Best Degree: The 4th or 5th degree polynomial is the best fitting model accordin
 
 #### Evaluation for Average Dewpoint:
 
-Similar to temperature, the BIC scores for dewpoint show a sharp initial decrease. The BIC score reaches its minimum around a degree of p=4 or p=5 for all three airports. The curves show that a degree of p=4 is highly effective at capturing the trend. For EWR, the minimum is p=4; for JFK and LGA, the minimum is p=5. Given the goal of parsimony, and the minimal difference between the p=4 and p=5 scores, I will select the 4th degree polynomial as the preferred model for the next question.
+Similar to temperature, the BIC scores for dewpoint show a sharp initial decrease. The BIC score reaches its minimum around a degree of p=4 or p=5 for all three airports. The curves show that a degree of p=4 is highly effective at capturing the trend. For EWR and LGA, the minimum is p=4; for JFK, the minimum is p=5. Given the goal of parsimony, and the minimal difference between the p=4 and p=5 scores, I will choose the 4th degree polynomial as the preferred model for the next question.
 
 ```{r evalute BIC for temperature}
 # Write a function to extract BIC for a list of models
@@ -499,6 +512,7 @@ In the async lecture, Jeffrey proposes four different smoothers that might be us
 3. (Optional) **Spline Smoothers**: There is a reading in the repository that provides some more background (it is a review from 2019) on using spline smoothers. The current implementation that we prefer in R is the `splines2` library. For your spline smoother, use the `splines2::naturalSpline` function. Once you have fitted this spline, you can use the `predict` method to produce values. A good starting place for this is [[here](https://wwenjie.org/splines2/articles/splines2-intro#natural-cubic-splines)]. We'll note that this is the most challenging of the smoothers to get running in this assignment, and so getting it running successfully is optional. 
 4. **Kernel Smoothers**.: Please use the `ksmooth` function that is available to you in the `stats` library. Because `stats` is always loaded in R, we have not referred to it using the `::` notation.  
 
+\newpage
 ## (6 points, with 2 optional) Part-1: Create Smoothers 
 
 With the weekly weather data that you used for the previous question, produce a smoothed variable for `average_temperature` and `average_dewpoint` using each of the four smoothers described in the async. Three smoothers are required of this question -- (1) Moving Average; (2) Regression Smoothers; and, (3) Kernel Smoothers. The fourth, splines, is optional but if you produce a spline smoother that is working effectively, you can earn two bonus points. (Note that the homework maximum score is still 100%.) 
@@ -511,6 +525,20 @@ For each smoother that you produce:
 - Attach the values that are produced by the smoother onto the `weekly_weather` dataframe. 
 - Produce a plot that shows the original data as `geom_point()`, and the smoother's predictions as `geom_line()`.
 - Your goal is not to produce **any** smoother, but instead, for each class of smoother, the version that is doint the best job that is possible by this smoother. That is, you are working through the hyperparametrs to these algorithms to produce their most effective output. 
+
+### Answer
+The plots demonstrate that all four smoothers capture the dominant annual seasonality in the weekly average temperature.
+
+The Moving Average (k=4) produces the most locally responsive and lag-heavy (due to the backward window) line, resulting in a somewhat non-smooth curve.
+
+The Regression Smoother (p=4) yields a very smooth curve which captures the overall wave-like shape but may slightly miss peak/trough timing due to its global nature.
+
+The Spline Smoother (df=5) provides a curve that is both smooth and responsive, conforming the peaks and valleys in previous curves. 
+
+The Kernal Smoother (k=10) produces a curve that dampens the noise, showing a good balance between responsiveness and smoothness.
+
+All four methods provide a useful less noisy component (of the trend/seasonal cycle).
+
 
 ```{r moving average smoother}
 # Note: For the smoothing plots, it is nicer to limit the origins to one for a clearer visual.
@@ -582,19 +610,14 @@ get_reg_pred <- function(data, y_var, degree = 4) {
   model_formula <- as.formula(paste0(y_var, " ~ poly(numeric_week, degree = ", degree, ")"))
   
   # 2. Fit the model using ONLY the 'data' tibble passed to the function
-  # This 'data' is the subsetted tibble for the current airport (53 rows)
   fitted_model <- lm(model_formula, data = data)
   
   # 3. Predict using the fitted model and the same 'data' tibble (53 rows)
-  # Ensure prediction uses the current group's data for correct length
   predictions <- predict(fitted_model, newdata = data)
   
-  # 4. Return the prediction vector (length 53)
+  # 4. Return the prediction vector 
   return(predictions)
 }
-
-weather_weekly %>%
-  group_by(origin)
 
 weather_weekly <- weather_weekly %>%
   group_by(origin) %>%
@@ -605,16 +628,66 @@ weather_weekly <- weather_weekly %>%
   ) %>%
   ungroup()
 
-# Produce plot for EWR (Example)
+# Produce plot for EWR 
 plot_smoother(weather_weekly, "reg_temp_p4", "average_temperature", "Average Temperature (4th-Degree Polynomial)")
- ```
+```
 
+ 
 ```{r spline smoother}
+# I'll use df=5.
 
+# Fit the natural cubic spline (df=5) within each origin
+get_spline_pred <- function(data, outcome, df_val = 5) {
+  # Ensure splines2 is loaded
+  
+  # The formula: y ~ naturalSpline(x, df)
+  formula <- paste0(outcome, " ~ naturalSpline(numeric_week, df = ", df_val, ")")
+  model <- lm(as.formula(formula), data = data)
+  
+  # Predict using the original data
+  predict(model, newdata = data)
+}
+
+weather_weekly <- weather_weekly %>%
+  group_by(origin) %>%
+#  filter(origin == "EWR")
+  mutate(
+    spline_temp_df5 = get_spline_pred(., "average_temperature", df_val = 5),
+    spline_dewp_df5 = get_spline_pred(., "average_dewpoint", df_val = 5)
+  ) %>%
+  ungroup()
+
+# Produce plot for EWR (Example)
+plot_smoother(weather_weekly, "spline_temp_df5", "average_temperature", "Average Temperature (Natural Spline, df=5)")
 ```
 
 ```{r kernel smoother}
+# 4. Rolling Median Smoother works 
+# I use a window size (period) of 10 weeks.
 
+
+get_rolling_median_pred <- function(data, outcome, window_size = 10) {
+  # This uses a backward-looking rolling median over 'window_size' weeks
+  slide_dbl(
+    .x = pull(data, !!sym(outcome)),
+    .f = median,
+    .before = window_size - 1, 
+    .after = 0,
+    .complete = TRUE 
+  )
+}
+
+# Apply the Rolling Median smoother (k=10 weeks)
+weather_weekly <- weather_weekly %>%
+  group_by(origin) %>%
+  mutate(
+    kernel_temp_r10 = get_rolling_median_pred(., "average_temperature", window_size = 10),
+    kernel_dewp_r10 = get_rolling_median_pred(., "average_dewpoint", window_size = 10)
+  ) %>%
+  ungroup()
+
+# Produce plot for EWR 
+plot_smoother(weather_weekly, "kernel_temp_r10", "average_temperature", "Average Temperature (Rolling Median Smoother, k=10)")
 ```
 
 
