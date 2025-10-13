@@ -1,6 +1,8 @@
 ---
 title: "W271 Assignment 7"
-output: pdf_document
+output: 
+  pdf_document:
+    latex_engine: xelatex
 ---
 
 ```{r load packages, message=FALSE, warning=FALSE}
@@ -274,10 +276,20 @@ weather
 weather %>%
   duplicates(key = origin, index = time_hour)
 
-#weather_ts <- 
-#  weather %>%
-#  as_tsibble(key = )
-  
+is_tsibble(weather)
+weather_ts <- 
+  weather %>%
+  as_tsibble(
+    key = origin,
+    index = time_hour
+  )
+
+weekly_td <- weather_ts %>%
+  index_by(week_index = yearweek(time_hour)) %>%
+  group_by(origin) %>%
+  summarize(average_temperature = mean(temp, na.rm = TRUE),
+            average_dewpoint = mean(dewp, na.rm = TRUE))
+weekly_td
 ```
 
 \newpage
@@ -291,25 +303,190 @@ For each of the `average_temperature` and `average_dewpoint` create ten models t
 
 Additionally, you might recall that in 203, we actually recommended you away from using the `poly` function. That was a recommendation based on students' knowledge at the time, when we were considering fitting log and square root transformations of data. At this point, you can handle the additional complexity and can take the recommendation that `poly` is nice for working with polynomial translations of time. 
 
+### Answer
+Used AI to help certain code chunks but I went through every single line of code and made 
+extensive edits.
+
 ```{r create a numeric_week variable with minimum value of zero}
 
+first_week_num <-
+  weekly_td %>%
+  pull(week_index) %>%
+  min() %>%
+  as.numeric()
+
+weekly_td <-
+  weekly_td %>%
+  mutate(numeric_week = as.numeric(week_index) - first_week_num)
+
+
+
+
+print(head(weekly_td, n = 2))
 ```
 
 ```{r fit models for average_temperature and average_dewpoint}
+# Fit 10 polynomial (in time) models for each of the two outcomes
+# I will fit models within each airport (origin) using nest/map.
+
+# Prepare the data for nested model fitting
+weather_nested <- weekly_td %>%
+  group_by(origin) %>%
+  nest()
+
+weather_nested
+
+
+# Function to fit 10 polynomial models for a given outcome (y_var)
+fit_polynomial_models <- function(data, y_var) {
+  # Create a list to store models 1 through 10
+  models_list <- list()
+  
+  # Base formula (vector) for the linear model
+  base_formula <- paste0(y_var, " ~ poly(numeric_week, degree = ", 1:10, ")")
+  
+  # Fit models using map so I can pass a vector and pass it to 
+  # lm() for iterations
+  models_list <- map(base_formula, ~ lm(as.formula(.x), data = data))
+  
+  # Name the list elements
+  names(models_list) <- paste0("model", 1:10)
+  
+  return(models_list)
+}
+
+# Fit models for average_temperature
+weather_models_temp <- weather_nested %>%
+  mutate(temp_models = map(data, ~ fit_polynomial_models(.x, "average_temperature")))
+
+# Fit models for average_dewpoint
+weather_models_dewp <- weather_nested %>%
+  mutate(dewp_models = map(data, ~ fit_polynomial_models(.x, "average_dewpoint")))
+
+# Combine the results for convenience (optional, but helpful for the next part)
+weather_models_all <- weather_models_temp %>%
+  left_join(weather_models_dewp %>% select(origin, dewp_models), by = "origin")
+
+print("Models fitted and stored in weather_models_all$temp_models and $dewp_models")
+
+summary(weather_models_temp[1, ]$temp_models[[1]]$model3)
 
 ```
+
+\newpage
 
 ## (2 points) Part-3: Evalute the model fits best for each outcomes
 
 For each of the outcomes -- `average_temperature` at the weekly level, and `average_dewpoint` at the weekly level -- make an assessment based on either AIC or BIC for why one polynomial degree produces the best fitting model. In doing so, describe why you have chosen to use either AIC or BIC, what the particular scoring of this metric is doing (i.e. write the formula, and explain to your reader what is happening in that formula). Especially compelling in producing your argument for why you prefer a particular model form is to create a plot of the polynomial degree on the x-axis and the metric score on the y-axis. 
 
+### Answer
+
+Analysis Rationale for AIC vs BIC
+I will choose to use the BIC (Bayesian Information Criterion) for model selection.
+
+Formula and Explanation:
+
+$$
+BIC = 2\log(\hat{\sigma}_k) + \frac{k\log(n)}{n}
+$$
+
+Where:
+
+ - $\hat{\sigma}_k^2$ is the MLE for the variance;
+ - $k$ is the number of estimated parameters (including intercept and sigma square); 
+ - $n$ is the number of observations used in the estimation.
+
+The BIC provides a stronger penalty for model complexity ($k \cdot \log(n)$) than AIC (2k), as shown in my answer to Question 1, which is useful when the goal is to select the better model out of a set of candidates. Since the true functional form of the weather cycle is unknown, BIC helps guard against overfitting by favoring simpler models that still capture the essential trend (e.g., the annual seasonality).
+
+#### Evaluation for Average Temperature:
+
+The plot below shows that the BIC scores decrease sharply for the initial increase in polynomial degree, indicating that a linear or quadratic model is insufficient. For all three airports, the BIC score reaches its minimum around a degree of p=4 or p=5. After this point, the curve flattens out, and then begins to slightly increase, indicating that the complexity penalty is starting to outweigh the marginal improvement in fit.
+
+Best Degree: The 4th or 5th degree polynomial is the best fitting model according to BIC for all origins. This degree is sufficient to capture the main seasonal (annual) cycle, which typically requires a pair of sine/cosine terms or, in this case, a 4th-degree polynomial. I will select the 4th degree as the preferred model for the next question, as it is the most parsimonious option among the best-fitting ones.
+
+#### Evaluation for Average Dewpoint:
+
+Similar to temperature, the BIC scores for dewpoint show a sharp initial decrease. The BIC score reaches its minimum around a degree of p=4 or p=5 for all three airports. The curves show that a degree of p=4 is highly effective at capturing the trend. For EWR, the minimum is p=4; for JFK and LGA, the minimum is p=5. Given the goal of parsimony, and the minimal difference between the p=4 and p=5 scores, I will select the 4th degree polynomial as the preferred model for the next question.
 
 ```{r evalute BIC for temperature}
+# Write a function to extract BIC for a list of models
+get_bic_data <- 
+  function(model_list, outcome_name) {
+  map_df(model_list, 
+         ~ tibble(
+            parameters = length(coef(.x)),
+            bic_score = BIC(.x)), 
+    .id = "model_name") %>%
+  mutate(
+    degree = parameters - 1,
+    outcome = outcome_name
+    )
+}
 
+# Get BIC for all temperature models across 3 origins
+bic_temp_data <- 
+  weather_models_all %>%
+  rowwise() %>%
+  mutate(bic_data = list(get_bic_data(temp_models, "Average Temperature"))) %>%
+  ungroup() %>%
+  unnest(bic_data)
+
+# Plot the BIC scores
+bic_temp_plot <- bic_temp_data %>%
+  ggplot(aes(x = degree, y = bic_score, color = origin)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "BIC Scores by Polynomial Degree for Average Temperature",
+    subtitle = "Lower values are closer fit",
+    x = "Polynomial Degree (p)",
+    y = "BIC Score",
+    color = "Airport (Origin)"
+  ) +
+  scale_x_continuous(breaks = 1:10)
+
+bic_temp_plot
+
+# Find the minimum BIC degree for each origin
+best_temp_models <- bic_temp_data %>%
+  group_by(origin) %>%
+  filter(bic_score == min(bic_score)) %>%
+  select(origin, best_degree_temp = degree, min_bic_temp = bic_score)
+
+print(best_temp_models)
 ```
 
 ```{r evaluate BIC for dewpoint}
+# Write a function to extract BIC for a list of models
+bic_dewp_data <- weather_models_all %>%
+  rowwise() %>%
+  mutate(bic_data = list(get_bic_data(dewp_models, "Average Dewpoint"))) %>%
+  ungroup() %>%
+  unnest(bic_data)
 
+# Plot the BIC scores
+bic_dewp_plot <- bic_dewp_data %>%
+  ggplot(aes(x = degree, y = bic_score, color = origin)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "BIC Scores by Polynomial Degree for Average Dewpoint",
+    subtitle = "Lower values are better",
+    x = "Polynomial Degree (p)",
+    y = "BIC Score",
+    color = "Airport (Origin)"
+  ) +
+  scale_x_continuous(breaks = 1:10)
+
+bic_dewp_plot
+
+# Find the minimum BIC degree for each origin
+best_dewp_models <- bic_dewp_data %>%
+  group_by(origin) %>%
+  filter(bic_score == min(bic_score)) %>%
+  select(origin, best_degree_dewp = degree, min_bic_dewp = bic_score)
+
+print(best_dewp_models)
 ```
 
 
@@ -336,11 +513,100 @@ For each smoother that you produce:
 - Your goal is not to produce **any** smoother, but instead, for each class of smoother, the version that is doint the best job that is possible by this smoother. That is, you are working through the hyperparametrs to these algorithms to produce their most effective output. 
 
 ```{r moving average smoother}
+# Note: For the smoothing plots, it is nicer to limit the origins to one for a clearer visual.
+# I will use EWR for the plots, but fit the smoothers to ALL origins as requested.
 
+# Prepare data for smoothing functions
+# Function to get the smoother predictions, nested by origin
+get_smoother_predictions <- function(data, smoother_col, smoother_name) {
+  data %>%
+    select(origin, week_index, numeric_week, average_temperature, average_dewpoint, !!sym(smoother_col)) %>%
+    rename(predicted_value = !!sym(smoother_col)) %>%
+    mutate(smoother = smoother_name)
+}
+
+# Base plotting function
+plot_smoother <- function(data, smoother_col, outcome_col, title_suffix) {
+  # Filter to a single origin for plot clarity
+  data %>%
+    filter(origin == "EWR") %>%
+    ggplot(aes(x = week_index)) +
+    geom_point(aes(y = !!sym(outcome_col)), alpha = 0.6) +
+    geom_line(aes(y = !!sym(smoother_col)), color = "red", linewidth = 1.2) +
+    labs(
+      title = paste("Smoother for", title_suffix, "(EWR Airport)"),
+      subtitle = paste(smoother_col, "Smoother is the red line"),
+      x = "Week Index",
+      y = outcome_col
+    )
+}
+
+# 1. Moving Average Smoother (Backward-looking, k periods)
+# Consultation with FPP3: A symmetric MA of order k=2m+1 provides a centered MA.
+# For backward-looking (causal) smoothers, I'll use the 'rollmean' function 
+# We choose k=4 (a 4-week moving average) as a reasonable parameter to capture a weekly average with some lag.
+
+# Function to compute backward rolling mean
+compute_backward_ma <- function(x, k) {
+  # 'align = right' makes it a backward (causal) smoother
+  zoo::rollmean(x, k = k, align = "right", fill = NA)
+}
+
+# Apply the moving average smoother (k=4)
+weather_weekly <- weekly_td %>%
+  group_by(origin) %>%
+  mutate(
+    ma_temp_k4 = compute_backward_ma(average_temperature, k = 4),
+    ma_dewp_k4 = compute_backward_ma(average_dewpoint, k = 4)
+  ) %>%
+  ungroup()
+
+# Produce plot for EWR (Example)
+plot_smoother(weather_weekly, "ma_temp_k4", "average_temperature", "Average Temperature (Backward MA, k=4)")
 ```
 
- ```{r regression smoother}
- 
+```{r regression smoother}
+# 2. Regression Smoother (4th-degree polynomial chosen by BIC)
+
+# Fit the chosen 4th-degree polynomial models within each origin
+get_reg_pred <- function(data, outcome) {
+  formula <- paste0(outcome, " ~ poly(numeric_week, degree = 4)")
+  model <- lm(as.formula(formula), data = data)
+  predict(model, newdata = data)
+}
+
+# Define the function (P4 is a common choice, adjust 'degree' if needed)
+get_reg_pred <- function(data, y_var, degree = 4) {
+  
+  # 1. Construct the specific formula for the desired degree
+  model_formula <- as.formula(paste0(y_var, " ~ poly(numeric_week, degree = ", degree, ")"))
+  
+  # 2. Fit the model using ONLY the 'data' tibble passed to the function
+  # This 'data' is the subsetted tibble for the current airport (53 rows)
+  fitted_model <- lm(model_formula, data = data)
+  
+  # 3. Predict using the fitted model and the same 'data' tibble (53 rows)
+  # Ensure prediction uses the current group's data for correct length
+  predictions <- predict(fitted_model, newdata = data)
+  
+  # 4. Return the prediction vector (length 53)
+  return(predictions)
+}
+
+weather_weekly %>%
+  group_by(origin)
+
+weather_weekly <- weather_weekly %>%
+  group_by(origin) %>%
+  filter(origin == "EWR") %>%
+  mutate(
+    reg_temp_p4 = get_reg_pred(., "average_temperature"),
+    reg_dewp_p4 = get_reg_pred(., "average_dewpoint")
+  ) %>%
+  ungroup()
+
+# Produce plot for EWR (Example)
+plot_smoother(weather_weekly, "reg_temp_p4", "average_temperature", "Average Temperature (4th-Degree Polynomial)")
  ```
 
 ```{r spline smoother}
