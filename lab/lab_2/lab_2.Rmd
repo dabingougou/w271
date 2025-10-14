@@ -1,0 +1,363 @@
+---
+title: 'A Simple Taylor Rule to Understand How the Federal Reserve Sets Interest Rates'
+geometry: margin=1in
+output:
+  pdf_document: default
+---
+
+The **Taylor Rule** is a guideline suggesting how a central bank (such
+as the U.S. Federal Reserve) might adjust short-term interest rates.
+
+Think of the economy as a large room with a **thermostat**, and **interest rates** are the thermostat’s *temperature dial*. When the “room” (the economy) gets too hot, you lower the thermostat setting; when it’s too cold, you raise it. The **Taylor Rule** helps decide how to adjust that dial, based on two key factors:
+
+1. The gap between **actual inflation** and **target inflation**  
+2. The gap between **actual output** and **potential output**
+
+Mathematically, in its original form, the **Taylor Rule** can be written as:
+
+\[
+i_t = r^* + \pi_t + 0.5 \bigl(\pi_t - \pi^*\bigr) + 0.5 \bigl(\text{Output Gap}_t\bigr),
+\]
+
+where:
+
+- \( i_t \) = **nominal interest rate** (our thermostat dial).  
+- \( r^* \) = **long-run real interest rate** (think of this as a baseline setting).  
+- \( \pi_t \) = **current inflation**.  
+- \( \pi^* \) = **target (desired) inflation**.  
+
+Here’s how this formula fits our **“thermostat” analogy**:
+
+1. **Inflation Gap** (\(\pi_t - \pi^*\)):  
+   - If actual inflation \(\pi_t\) is higher than the target \(\pi^*\), it’s like the room is *too hot*. The formula says to **increase** \(i_t\) (the interest rate), which “cools” the economy by making borrowing more expensive and slowing spending.
+
+2. **Output Gap**:  
+   - If **actual output** is above **potential output**, it’s like the room is overheated. The rule again prescribes increasing \(i_t\) so the economy doesn’t overheat further.  
+   - If **actual output** is below **potential**, it’s like the room is *too cold*. Lower \(i_t\) (the thermostat) to warm up the economy—cheaper borrowing can stimulate growth.
+
+Although real-world policy can be more complex, the Taylor Rule
+offers a simple, intuitive lens for analyzing monetary policy decisions.
+This lab will guide you in applying time-series methods to **quarterly**
+U.S. macroeconomic data—retrieved from FRED—to see how well the Taylor
+Rule can explain and forecast interest rates behavior. You will build, test, and
+compare models on a **training set (up to 2022)** and a **test set
+(after 2022)**, evaluating forecasts using RMSE and related metrics.
+
+----
+
+# Task 1: Data Retrieval and Initial EDA (Quarterly Frequency)(10 Points)
+
+1. **Obtain Data (Quarterly) (2 Points)**  
+   - Collect quarterly data from 1980Q1 through the latest
+     available quarter (e.g., 2023Q4). You will use a *training* period
+     (e.g., 1980Q1–2022Q4) and reserve the rest (2023Q1 onward) as the
+     *test* set.
+   - Required series:  
+     - Federal Funds Effective Rate (e.g., `FEDFUNDS`)  
+     - Inflation measure (e.g., Personal Consumption Expenditures Index (`PCEPI`))  
+     - Real GDP (`GDPC1`) and Potential Real GDP (e.g., `GDPPOT` from
+       CBO)
+       
+- *Hint:* Use the [FRED API](https://fred.stlouisfed.org/docs/api/api_key.html) (with your free API key) to query these series programmatically.
+
+
+2. **Construct Variables (2 Points)**  
+   - **Inflation**: Percentage change in PCE.
+   - **Output Gap**:  
+     \[
+       \frac{\text{Real GDP} - \text{Potential Real GDP}}{\text{Potential Real GDP}} \times 100.
+     \]
+
+3. **Initial Plots and Summaries (6 Points)**  
+   - Plot each series over time.  
+   - Provide summary statistics (mean, variance, etc.).  
+   - Briefly comment on notable historical events or patterns (e.g.,
+     high inflation periods, recessions, near-zero interest rates).
+
+----
+
+# Task 2: Preprocessing (12 Points)
+
+We will use *quarterly* data throughout. Please break your analysis into
+the following **four** subsections:
+
+### 2.1: Frequency Alignment (Resampling) (2 Points)
+
+- **Resampling or Converting Frequencies**: 
+  - If any of your raw data is at a different frequency (e.g., monthly),
+    you can **resample** to quarterly. For instance, you might take the
+    **quarterly average** or **quarter-end values**.  
+  - Provide a brief explanation of how you performed resampling (e.g.`aggregate()` in R).  
+- Ensure all series end up in the same **quarterly** date index (e.g.,
+  1980Q1, 1980Q2, etc.).
+
+### 2.2: Outlier Detection & Treatment (5 Points)
+
+1. **Use Your Plots** from Task 1 to visually spot any extreme spikes.  
+2. **Possible Methods** to detect outliers:
+   - **Z-score Threshold** (e.g., if absolute Z-score > 3).  
+   - **Hampel Filter**.  
+   - **Percentile-based Winsorizing** (e.g., 1st/99th percentile).  
+3. **Select One Method** and **Explain Why**  
+   - Justify your choice. Maybe you prefer winsorizing because it
+     retains all points but caps extremes.  
+4. **Implement** the chosen method on your series:
+   - If you **winsorize**, specify the cutoffs.  
+   - If you remove data, state how many points you removed.  
+5. **Explain** how you treat (or keep) these outliers in your final
+   dataset.
+
+### 2.3: Seasonal Adjustment (5 Points)
+
+Even with quarterly data, there might be seasonal patterns, especially
+in GDP series.
+
+1. **Detection**  
+   - Produce seasonal plots.  
+   - Run a statistical test for seasonality (e.g., the QS test).
+2. **Different Methods** for adjustment:
+   - **X-13ARIMA-SEATS** (commonly used)  
+   - **STL Decomposition**  
+   - **Multiplicative/Additive Seasonal Method** 
+3. **Select One**  
+   - State which method you use (e.g., “We apply STL because it handles
+     complex seasonal patterns”).  
+4. **Seasonally Adjust** the data (if necessary) and show the “before
+   vs. after” comparison.
+
+
+
+# Task 3: Stationarity Testing & Potential Structural Breaks (13 Points)
+
+### 3.1: Stationarity Testing (8 Points)
+
+One of the most crucial steps in time-series modeling is **checking for
+stationarity**, which often involves **unit root tests**. However, if
+there is reason to believe the data has **structural breaks** (abrupt
+changes in the time series behavior at certain points), *standard* tests
+like the Augmented Dickey-Fuller (ADF) may be misleading.
+
+When performing an ADF (Augmented Dickey-Fuller) test, we must decide
+which *deterministic elements* (constant, trend) to include in the test
+equation. 
+
+1. **type = "none"**  
+   - No constant or trend.  
+   - This equation is the most restrictive. If the data actually have a
+     nonzero mean or an upward/downward drift, ignoring those can affect
+     the test.
+
+2. **type = "drift"**  
+   - Allows for a constant (“intercept”) in the test equation.  
+   - Commonly used when we suspect the series has a nonzero average.
+
+3. **type = "trend"**  
+   - Allows for both a constant and a linear time trend.  
+   - Used if the data appear to show a *systematic* upward or downward
+     trend.
+
+A common approach is to start with the most general case (**trend**) and
+see if the data statistically support including a trend. If we don’t
+find evidence for a trend, we might move to **drift**. If we still find
+no evidence for an intercept, we end with **none**. This is sometimes
+called a *general-to-specific* approach.
+
+The “augmented” part of the ADF test means we include *lagged* terms of
+the variable to account for potential autocorrelation. In practice, we
+often let a procedure pick the best number of lags using an
+*information criterion* (such as **AIC** or **BIC**). These criteria
+trade off model fit (likelihood) against model complexity (number of
+parameters).
+
+### 3.2: Stationarity with structural break (5 Points)
+
+If your series underwent a major shift (e.g., policy change, macro-economic event) at some point in time, a standard ADF test may struggle. Perron (1989) highlights that traditional ADF tests can be biased toward not rejecting the null of a unit root when there’s a break in level or trend. 
+
+- Employ unit root tests that allow for an **endogenous** structural break, such as the **Zivot & Andrews** test to control for possible structural breaks.
+
+```r
+The 'uroot' or 'aTSA' packages may provide a Zivot-Andrews test.
+For instance, in package 'aTSA', you have:
+library(aTSA)
+za_test <- ZivotAndrews(my_ts, max.lag = 5)
+za_test
+
+```
+
+----
+
+# Task 4: Estimating the Basic Taylor Rule (OLS) (10 Points)
+
+Recall the simplified Taylor Rule:
+
+\[
+i_t = \alpha_0 + \alpha_1 (\pi_t - \pi^*) + \alpha_2 (\text{Output Gap}_t) + \varepsilon_t,
+\]
+
+where \(\pi^*\) could be 2%. **Train** this model on data from **1980Q1 to 2022Q4** and reserve
+the rest (2023Q1 onward) as the **test** set.
+
+1. **Interpretation of \(\alpha_1\)**  
+   - If \(\alpha_1>1\), it means the interest rate moves *more* than
+     one-for-one with inflation (the “Taylor principle”).  
+   - Compare your estimated \(\alpha_1\) with 1. Discuss whether your
+     result aligns with theory.
+2. **Model Diagnostics**  
+   - Check whether residuals exhibit autocorrelation (ACF plots,
+     Durbin-Watson, etc.).  
+   - Evaluate in-sample (train) RMSE.  
+3. **Forecast Performance**  
+   - Generate forecasts for the **test period** (2023Q1–2024Q4) using
+     the fitted OLS model.  
+   - Calculate out-of-sample RMSE. Compare train vs. test performance
+     briefly.
+
+----
+
+# Task 5: Cointegration and Error Correction Model (ECM) (15 Points)
+
+Next, investigate whether there is a **long-run equilibrium** (in the
+sense of cointegration) among \(\{i_t, (\pi_t - \pi^*), \text{Output Gap}_t\}\).
+Conceptually, if the Federal Reserve consistently adjusts the federal funds rate in response to changes in inflation and the output gap, you might expect a mean-reverting relationship in the long run (e.g., the gap between the actual interest rate and its “Taylor-implied” level might be stationary).
+
+## 5.1: Cointegration Test (5 Points)
+   - Run an **Engle-Granger** two-step test:  
+     - Test the residuals of the estimated Basic Taylor Rule for a unit root (e.g., ADF).  
+   - If the residuals are stationary, you conclude there’s a long-run
+     equilibrium relationship.
+
+## 5.2: Estimating the ECM via OLS (5 Points)
+   An Error Correction Model (ECM) is a way to capture both:
+
+   - Long-Run Equilibrium: Some economic theory tells us that variables have a stable long-run relationship (cointegration).
+   - Short-Run Dynamics: In the short run, the variables might deviate from their equilibrium, but they will tend to move back (“correct”) over time.
+
+   \[
+     \Delta i_t = \gamma_0 + \gamma_1 \Delta (\pi_t - \pi^*) 
+                  + \gamma_2 \Delta (\text{Output Gap}_t) 
+                  + \phi \left[\underbrace{i_{t-1} 
+                    - \beta_1 (\pi_{t-1} - \pi^*) 
+                    - \beta_2 (\text{Output Gap}_{t-1})}_{\text{equilibrium error at } t-1}\right]
+                  + \epsilon_t.
+   \]
+
+   where:
+
+   - \(\Delta i_t = i_t - i_{t-1}\): The *change* (first difference) in the
+     interest rate.  
+   - \(\Delta (\pi_t - \pi^*)\): The *change* in the inflation gap.  
+   - \(\Delta (\text{Output Gap}_t)\): The *change* in the output gap.  
+   - \(i_{t-1} - \beta_1 (\pi_{t-1} - \pi^*) - \beta_2(\text{Output Gap}_{t-1})\):  
+     The **equilibrium error**—how far \(i_{t-1}\) was from the long-run “equilibrium level.”  
+   - \(\phi\): The speed of adjustment (often negative).
+
+   You can estimate the ECM in two stages:
+   
+   1. **Estimate the Long-Run Regression** (levels) and extract residuals. 
+   
+   2. **Estimate the ECM** (in differences + lagged residual) by OLS.
+
+## 5.3: Compare ECM Forecasts (5 Points)
+   - Train the ECM on 1980Q1–2022Q4, forecast 2023Q1–2024Q4.  
+   - Report RMSE and compare to the basic OLS-based Taylor Rule.
+
+----
+
+# Task 6: ARIMA Modeling of Taylor Rule Errors (10 Points)
+
+Often, the **residuals** (\(\hat{\varepsilon}_t\)) from the Taylor Rule
+have patterns (autocorrelation) left unexplained by the simple equation.
+We can fit an **ARIMA** model to these residuals.
+
+## Combined Forecast
+
+Finally, to **improve your forecast** of the interest rate, you can **combine**:
+
+1. The **Taylor Rule** prediction (OLS model).  
+2. The **ARIMA** forecast of the residual (i.e., the unexplained part).
+
+In other words, your final predicted interest rate is:
+
+\[
+\hat{i}_t^\text{combined} 
+  = \hat{i}_t^\text{Taylor} 
+  + \hat{\varepsilon}_t^\text{ARIMA}.
+\]
+
+Then, in a **comparison table**, report the **in-sample (train)** and
+**out-of-sample (test)** RMSE for:
+
+- The **simple Taylor Rule** (OLS)  
+- The **ECM model**  
+- The **Taylor Rule + ARMA** combined model
+
+----
+
+# Task 7: VAR Modeling (15 Points)
+
+Now consider \(\{i_t, (\pi_t - \pi^*), \text{Output Gap}_t\}\) as a **system**.
+Vector Autoregression (VAR) captures *feedback* among these variables.
+
+### 7.1: Estimate a VAR Model (10 Points) 
+
+1. **Estimate a VAR**
+   - Use data from 1980Q1–2022Q4.  
+   - Choose a lag order (p) by AIC/BIC or other criteria.  
+   - Check if differencing is needed (based on stationarity tests). 
+   
+2. **Forecasting**  
+   - Generate multi-step forecasts for 2023Q1–2024Q4.  
+   - Compute RMSE for train and test sets for all equations. Compare the Fed funds rate RMSEs with previous models.
+   
+3. **Granger Causality**  
+   - Test whether \((\pi_t - \pi^*)\) and \(\text{Output Gap}_t\) *Granger-cause* \(i_t\), etc.
+
+
+## Task 7.2: Impulse Response Function (IRF) (5 Points)
+
+**Impulse Response Functions (IRFs)** help us understand how **one
+variable** in a VAR system **responds** over time when there’s a
+*sudden, one-time change* (a “shock”) in **another** variable.
+
+1. **Definition**  
+   - An **IRF** shows how \(\{ i_t, (\pi_t - \pi^*), \text{Output Gap}_t\}\) each *evolve* over
+     several periods **after** a *one-time* shock in (for example)
+     \((\pi_t - \pi^*)\).  
+   - **Why Do We Care?** In economic terms: *If inflation suddenly
+     increases by X%, how does the Fed Funds Rate react over the next
+     few quarters?* Does it rise quickly, does it overshoot, etc.?
+
+2. **Implementation in R (Example)**  
+   ```r
+   library(vars)
+
+   # Suppose 'var_model' is a VAR(2) with variables c("inflation", "interest_rate", "output_gap")
+   # We'll see how a shock to 'inflation' affects 'interest_rate' over the next 8 quarters
+
+   irf_result <- irf(
+     var_model,
+     impulse = "inflation",      # the variable that gets the shock
+     response = "interest_rate", # the variable we observe reacting
+     n.ahead = 8,                # how many periods (quarters) ahead
+     boot = TRUE,                # use bootstrapped confidence intervals
+     ci = 0.90                   # confidence interval (e.g., 90%)
+   )
+
+   plot(irf_result)
+```
+
+- By default, irf() usually applies either a 1-unit or 1-standard-deviation shock (depending on your settings).
+
+# Final Deliverable
+
+Your final submission should include:
+
+    - A main report (in PDF) that is well-organized and accessible to a moderately informed audience.
+    
+    - Any additional or technical appendices if desired (e.g., extra analysis).
+    
+    - Reproducible code (this .Rmd) so another analyst could replicate your results.
+
+
+
+

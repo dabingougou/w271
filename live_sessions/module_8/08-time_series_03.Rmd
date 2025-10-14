@@ -8,7 +8,6 @@ editor_options:
 
 
 # Time Series Analysis Lecture 3: Autoregressive Models and Moving Average Models
-![South Hall](./images/south_hall.png){width=50%}
 
 \newpage
 
@@ -72,6 +71,7 @@ library(scales)
 if(!"gridExtra"%in%rownames(installed.packages())) {install.packages("gridExtra")}
 library(gridExtra)
 ```
+
 
 \newpage
 
