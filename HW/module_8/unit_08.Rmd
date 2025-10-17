@@ -32,9 +32,14 @@ You did work in a previous homework to produce a data pipeline that pulled the u
 
 > "Are unemployment claims in the US an autoregressive or a moving average process?
 
+\newpage
 ## (1 point) Part-1: Why is the distinction important? 
 
 Why is it important to know whether a process is a $AR$ or an $MA$ (or a combination of the two) process? What changes in the ways that you would talk about the process, what changes in the ways that you would fit a model to the process, and what changes with how you would produce a forecast for this process?
+
+### Q1P1 Answer 
+
+
 
 ## (1 point) Part-2: Pull in (and clean up) your data pipeline. 
 
@@ -44,9 +49,111 @@ In the previous homework, you built a data pipeline to draw data from the BLS. W
 
 - Are the processes that could be made more modular, or better documented so that they are easier for you to understand what they are doing? You've been away from the code that you wrote for a few weeks, and so it might feel like "discovering" the code of a *mad-person* (Who even wrote this???)
 
+```{r}
+
+huibin_bls_key <- "e943ccb8989f4599bd7964149a31457d"
+bls_set_key(huibin_bls_key)
+if (bls_has_key()) {
+  print("Key provided. OK.")
+} else {
+  print("BLS API key not provided")
+}
+
+# Specify series IDs
+series_id_list <- c(
+  overall = "LNS14000000",
+  male    = "LNS14000001",
+  female  = "LNS14000002"
+)
+
+current_year <- as.numeric(format(Sys.Date(), "%Y"))
+current_year
+
+#raw_bls_data <- get_n_series_table(
+#  series_ids = series_id_list,
+#  api_key = bls_get_key(),
+#  start_year = current_year - 20, 
+#  end_year = current_year
+#)
+
+# Saved the query results so that I don't use up my api quota
+saveRDS(raw_bls_data, file = "data/my_api_results.Rds")
+
+# readRDS()
+
+# bls_unset_key()
+
+head(raw_bls_data)
+
+unemployment <- 
+  raw_bls_data %>%
+  pivot_longer(
+#    cols = c("LNS14000000", "LNS14000001"), 
+    cols = starts_with("LNS"),
+    names_to = "series_id",
+    values_to = "value"
+  ) %>%
+  mutate(
+    date = lubridate::ymd(paste0(year, 
+                                 "-", 
+                                 gsub(pattern = "M", 
+                                      replacement = "",
+                                      x = period),
+                                 "-01"
+                                 )), 
+    name = case_when(
+      series_id == "LNS14000000" ~ "overall",
+      series_id == "LNS14000001" ~ "male",
+      series_id == "LNS14000002" ~ "female",
+      TRUE ~ series_id
+                      )
+  ) %>%
+  mutate(
+    year = year(date),
+    month = month(date),
+    time_index = yearmonth(date)
+  ) %>%
+  as_tsibble(
+    key = name,
+    index = time_index
+  )
+
+unemployment
+unemployment %>%
+  ggplot(aes(x = year, y = value, color = name)) +
+  geom_line(line_width = 1)
+
+```
+
+\newpage
 ## (5 points) Part-3: Conduct an EDA of the data and comment on what you see. 
 
 We have presented four **core** plots that are a part of the EDA for time-serires data. Produce each of these plots, and comment on what you see.
+
+```{r}
+
+unemployment %>%
+  ggplot(aes(x = time_index, y = value, color = name)) +
+  geom_line(line_width = 2) + 
+  labs(
+    title = "2005 - 2025 Unemployment by Gender",
+    x = "Time"
+  )
+
+
+unemployment %>%
+  filter(name == "overall") %>%
+  ACF(
+    lag_max= 60
+  ) %>%
+  autoplot() + 
+  labs(
+    title = "ACF for Overall Unemployment",
+    x = "Lag in Month"
+  )
+
+```
+
 
 ## (1 point) Part-4: Make a Call 
 
