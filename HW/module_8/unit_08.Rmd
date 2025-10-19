@@ -1,6 +1,8 @@
 ---
 title: "W271 Assignment 8"
-output: pdf_document
+output: 
+  pdf_document:
+    latex_engine: xelatex
 ---
 
 ```{r load packages, message=FALSE, warning=FALSE}
@@ -184,17 +186,18 @@ Based on what you have plotted and written down in the previous section, would y
 
 ### Answer
 
-**The unemployment rate time series, according to the EDA, particularly the ACF and the PACF, resembles as an AR(1) process. Specifically, autocorrelation decays gradually, PACF cuts off sharply after lag 1 — meaning each month’s unemployment rate is strongly predicted by the previous month’s rate.
+**The unemployment rate time series, according to the EDA, particularly the ACF and the PACF, resembles as an AR(1) process. Specifically, autocorrelation decays gradually, PACF cuts off sharply after lag 1 — meaning each month’s unemployment rate is strongly predicted by the previous month’s rate.**
 
-Also I am using my knowledge from macroeconomics that long-run unemployment should be, in theory, a constant, or the natural rate unemployment rate under potential output. This favors the assumption that the time series is a stationary process.**
+**Also I am using my knowledge from macroeconomics that long-run unemployment should be, in theory, a constant, or the natural rate unemployment rate under potential output. This favors the assumption that the time series is a stationary process.**
 
 \newpage
 ## (6 points total) Part-5:  Estimate a model 
 
 Report the best-fitting parameters from the best-fitting model, and then describe what your model is telling you. In this description, you should: 
 
-\newpage
 - (1 point) State, and justify your model selection criteria. 
+
+### Answer
 
 ```{r}
 unemployment
@@ -215,28 +218,41 @@ model$resid
 ?ar()
 
 
-# Fit AR(p) models (assuming d=0)
-fit_ar_models <- 
-  unemployment %>%
-#  pull(value) %>%
-  model(
-    auto_ar = ARIMA(value ~ 1 + pdq(D=0, Q=0)), # auto_arima with no differencing or MA
-#    ar_1 = ARIMA(unemployment_rate ~ pdq(1, 0, 0)),
-#    ar_2 = ARIMA(unemployment_rate ~ pdq(2, 0, 0)),
-#    ar_3 = ARIMA(unemployment_rate ~ pdq(3, 0, 0))
-  )
-
 # Extract and compare AICc values
-model_comparison <- glance(fit_ar_models) %>%
-  select(.model, AICc, BIC) %>%
-  arrange(AICc)
+#model_comparison <- glance(fit_ar_models) %>%
+#  select(.model, AICc, BIC) %>%
+#  arrange(AICc)
 
-model_comparison
+#model_comparison
 ```
 
+\newpage
 - (1 point) Interpret the model selection criteria in context of the other models that you also fitted.
+
+### Answer
+**Using the ar() function similarly to the async, the AR(1) model was selected as the best-fitting model because it had the lowest AIC (0 in the normalized output) among all tested orders (p=0 to p=12).**
+
+**Interpretation: The AR(1) model is the most parsimonious (simplest adequate) model for the unemployment rate under the assumption of stationarity. It suggests that the predictive power of the unemployment time series is captured by its immediate prior value y(t−1), and adding more lagged terms y(t−2), y(t−3) and so on does not improve the fit enough to justify the increased complexity (parameter count). This result is consistent with the sharp cutoff seen at Lag 1 in the PACF plot.**
+
+\newpage
 - (2 points) Interpret the coefficients of the model that you have estimated. 
+
+### Answer
+
+Interpretation:
+
+**AR(1) Coefficient ($\phi_1$=0.9416): This coefficient is highly significant (since 0.9416 is many standard errors away from 0).**
+
+**It measures persistence. A value of 0.9416 means that 94.16% of last month's unemployment rate persists into the current month. The current unemployment rate is strongly driven by the rate in the immediately preceding period. This high value confirms the slow, smooth movement observed in the time plot and ACF.**
+
+\newpage
 - (2 points) Produce and interpret the model diagnostic plots to evaluate how well your best-fitting model is performing.
+
+```{r}
+ar_residuals <- model$resid
+```
+
+\newpage
 - (1 (optional) point) If, after fitting the models, and interpreting their diagnostics plots, you determine that the model is doing poorly -- for example, you notice that the residuals are not following a white-noise process -- then, make a note of the initial model that you fitted then propose a change to the data or the model in order to make the model fit better. If you take this action, you should focus your interpretation of the model's coefficients on the model that you think does the best job, which might be the model after some form of variable transformation. 
 
 
