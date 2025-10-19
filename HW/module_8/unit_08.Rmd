@@ -77,9 +77,9 @@ current_year
 #)
 
 # Saved the query results so that I don't use up my api quota
-saveRDS(raw_bls_data, file = "data/my_api_results.Rds")
+#saveRDS(raw_bls_data, file = "data/my_api_results.Rds")
 
-# readRDS()
+raw_bls_data <- readRDS("data/my_api_results.Rds")
 
 # bls_unset_key()
 
@@ -120,9 +120,13 @@ unemployment <-
 
 unemployment
 unemployment %>%
-  ggplot(aes(x = year, y = value, color = name)) +
+  ggplot(aes(x = time_index, y = value, color = name)) +
   geom_line(line_width = 1)
 
+# After examining all three, which are similar, I keep the overall unemployment rate
+unemployment <-
+  unemployment %>%
+  filter(name == "overall")
 ```
 
 \newpage
@@ -134,15 +138,19 @@ We have presented four **core** plots that are a part of the EDA for time-serire
 
 unemployment %>%
   ggplot(aes(x = time_index, y = value, color = name)) +
-  geom_line(line_width = 2) + 
+  geom_line(linewidth = 1) + 
   labs(
     title = "2005 - 2025 Unemployment by Gender",
-    x = "Time"
+    x = "Time",
+    color = "Series"
   )
 
+#unemployment %>%
+#  autoplot(value)
 
+# Second: ACF Plot
 unemployment %>%
-  filter(name == "overall") %>%
+#  filter(name == "overall") %>%
   ACF(
     lag_max= 60
   ) %>%
@@ -152,23 +160,88 @@ unemployment %>%
     x = "Lag in Month"
   )
 
+# Third: Distribution
+unemployment %>%
+#  filter(name == "overall") %>%
+  ggplot(aes(x = value)) + 
+  geom_histogram(bins = 80)
+
+# Forth: PACF
+unemployment %>%
+  filter(name == "overall") %>%
+  PACF(value, lag_max = 60) %>%
+  autoplot() + 
+  labs(title = "PACF for Overall Unemployment",
+       x = "Lag in Month")
+
 ```
 
-
+\newpage
 ## (1 point) Part-4: Make a Call 
+
 
 Based on what you have plotted and written down in the previous section, would you say that the unemployment rate is an $AR$, $MA$ or a mix of the two?
 
+### Answer
+
+**The unemployment rate time series, according to the EDA, particularly the ACF and the PACF, resembles as an AR(1) process. Specifically, autocorrelation decays gradually, PACF cuts off sharply after lag 1 — meaning each month’s unemployment rate is strongly predicted by the previous month’s rate.
+
+Also I am using my knowledge from macroeconomics that long-run unemployment should be, in theory, a constant, or the natural rate unemployment rate under potential output. This favors the assumption that the time series is a stationary process.**
+
+\newpage
 ## (6 points total) Part-5:  Estimate a model 
 
 Report the best-fitting parameters from the best-fitting model, and then describe what your model is telling you. In this description, you should: 
 
+\newpage
 - (1 point) State, and justify your model selection criteria. 
+
+```{r}
+unemployment
+
+model <- 
+  unemployment %>%
+  pull(value) %>%
+  ar(aic = TRUE, bic = TRUE, order.max = 12, method = "yule-walker")
+
+model$order
+model$aic
+model$ar
+sqrt(model$asy.var.coef)
+model$asy.var
+summary(model)
+model$bic
+model$resid
+?ar()
+
+
+# Fit AR(p) models (assuming d=0)
+fit_ar_models <- 
+  unemployment %>%
+#  pull(value) %>%
+  model(
+    auto_ar = ARIMA(value ~ 1 + pdq(D=0, Q=0)), # auto_arima with no differencing or MA
+#    ar_1 = ARIMA(unemployment_rate ~ pdq(1, 0, 0)),
+#    ar_2 = ARIMA(unemployment_rate ~ pdq(2, 0, 0)),
+#    ar_3 = ARIMA(unemployment_rate ~ pdq(3, 0, 0))
+  )
+
+# Extract and compare AICc values
+model_comparison <- glance(fit_ar_models) %>%
+  select(.model, AICc, BIC) %>%
+  arrange(AICc)
+
+model_comparison
+```
+
 - (1 point) Interpret the model selection criteria in context of the other models that you also fitted.
 - (2 points) Interpret the coefficients of the model that you have estimated. 
 - (2 points) Produce and interpret the model diagnostic plots to evaluate how well your best-fitting model is performing.
 - (1 (optional) point) If, after fitting the models, and interpreting their diagnostics plots, you determine that the model is doing poorly -- for example, you notice that the residuals are not following a white-noise process -- then, make a note of the initial model that you fitted then propose a change to the data or the model in order to make the model fit better. If you take this action, you should focus your interpretation of the model's coefficients on the model that you think does the best job, which might be the model after some form of variable transformation. 
 
+
+
+\newpage
 # (14 Points Total) Question-2: Forecasting Inflation
 
 The Federal Reserve tracks inflation data across countries on a monthly level.
