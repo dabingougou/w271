@@ -23,6 +23,8 @@ library(nycflights13)
 library(blsR)
 
 library(fable)
+library(fabletools)
+library(slider)
 ```
 
 ```{r set themes}
@@ -65,11 +67,16 @@ In the previous homework, you built a data pipeline to draw data from the BLS. W
 
 ### Answer
 
+For data pipeline (not in HW 6 pipeline): 
+
+  - I added logic (if else statement) to check if API key is provided. 
+  - After examining the time trend of male and female time trend, I kept the overall trend only for later tasks.
+  - Last time I ran into "reaching API request limit" problem. This time I saved the raw query on local drive then read from local drive when I re-knit (for many times).
 
 ```{r}
-
 huibin_bls_key <- "e943ccb8989f4599bd7964149a31457d"
 bls_set_key(huibin_bls_key)
+
 if (bls_has_key()) {
   print("Key provided. OK.")
 } else {
@@ -85,6 +92,9 @@ series_id_list <- c(
 
 current_year <- as.numeric(format(Sys.Date(), "%Y"))
 current_year
+
+# The block below queries the data, and was commented out after the results
+# saved locally.
 
 #raw_bls_data <- get_n_series_table(
 #  series_ids = series_id_list,
@@ -105,7 +115,6 @@ head(raw_bls_data)
 unemployment <- 
   raw_bls_data %>%
   pivot_longer(
-#    cols = c("LNS14000000", "LNS14000001"), 
     cols = starts_with("LNS"),
     names_to = "series_id",
     values_to = "value"
@@ -151,8 +160,30 @@ unemployment <-
 
 We have presented four **core** plots that are a part of the EDA for time-serires data. Produce each of these plots, and comment on what you see.
 
-```{r}
+### Answer
 
+1. Time plot
+
+Unemployment shows some cyclical movements tied to business cycles, with spikes during recessions (e.g., 2008, 2020). Unemployment rises sharply in downturns but gradually returns toward a long-run average.
+
+2. ACF plot
+
+The autocorrelation decays slowly over many lags, suggesting strong persistence — each month’s unemployment rate is correlated with many months prior. This indicates an autoregressive structure.
+
+3. Distribution plot
+
+The histogram is not bell-shaped (right-skewed), reflecting periods of high unemployment during recessions. Outliers are present (subprime, Covid-19).
+
+4. PACF plot
+
+The PACF cuts off after lag 1, while later lags are small and insignificant. This is a sign of an AR(1) process.
+
+Summary:
+
+The EDA supports modeling unemployment as a stationary AR(1) process — strongly persistent but mean-reverting, with no major structural breaks or variance shifts.
+
+```{r}
+#Plot the time trend
 unemployment %>%
   ggplot(aes(x = time_index, y = value, color = name)) +
   geom_line(linewidth = 1) + 
@@ -162,6 +193,7 @@ unemployment %>%
     color = "Series"
   )
 
+# Commented out another way of quick time trend
 #unemployment %>%
 #  autoplot(value)
 
@@ -213,6 +245,11 @@ Report the best-fitting parameters from the best-fitting model, and then describ
 - (1 point) State, and justify your model selection criteria. 
 
 ### Answer
+**The AR() model class is selected based on the EDA in the previous part. Then the order is selected to have a low aic and at the same time avoiding overfitting (e.g., order 25).** 
+
+**As shown in the async and the text book, and using the ar() function similarly to the async, the AR(1) model was selected as the best-fitting model because it had the lowest AIC (0 in the normalized output) among all tested orders (p=0 to p=12).**
+
+**It is worth-noting that the ar() method with the default optimization yields the lowest AIC at lag 25, but the function selects AR(1). AIC, which doesn't penalize overfit as severely as BIC, is the lowest at lag 25 may lead to overfitting.**
 
 ```{r}
 unemployment
@@ -222,15 +259,14 @@ model <-
   pull(value) %>%
   ar(aic = TRUE, bic = TRUE, order.max = 12, method = "yule-walker")
 
-model$order
-model$aic
-model$ar
-sqrt(model$asy.var.coef)
-model$asy.var
+#model$order
+#model$aic
+#model$ar
+#sqrt(model$asy.var.coef)
+#model$asy.var
 summary(model)
-model$bic
-model$resid
-?ar()
+#model$bic
+#model$resid
 
 
 # Extract and compare AICc values
@@ -245,9 +281,8 @@ model$resid
 - (1 point) Interpret the model selection criteria in context of the other models that you also fitted.
 
 ### Answer
-**Using the ar() function similarly to the async, the AR(1) model was selected as the best-fitting model because it had the lowest AIC (0 in the normalized output) among all tested orders (p=0 to p=12).**
 
-**Interpretation: The AR(1) model is the most parsimonious (simplest adequate) model for the unemployment rate under the assumption of stationarity. It suggests that the predictive power of the unemployment time series is captured by its immediate prior value y(t−1), and adding more lagged terms y(t−2), y(t−3) and so on does not improve the fit enough to justify the increased complexity (parameter count). This result is consistent with the sharp cutoff seen at Lag 1 in the PACF plot.**
+**Interpretation: The AR(1) model is the simplest adequate model (compared to higher orders with low AIC values) for the unemployment rate under the assumption of stationarity. It suggests that, according to the ar() method, the predictive power of the unemployment time series is captured by its immediate prior value y(t−1), and adding more lagged terms y(t−2), y(t−3) and so on does not improve the fit enough to justify the increased complexity (parameter count). This result is consistent with the sharp cutoff seen at Lag 1 in the PACF plot.**
 
 \newpage
 - (2 points) Interpret the coefficients of the model that you have estimated. 
@@ -310,6 +345,9 @@ Load the CSV provided and store the data in a useful dataframe. Check for missin
 Also create lagged columns for GBR and CAN and training and test datasets based on pre and post Jan 1, 2022.
 
 ### Answer
+
+The data is loaded and "sum(is.na(raw_inflation))" returns 0, which indicates no missing values. Initially the tsibble is created in long form (USA, CAN, GBR), then changed to wide form for later tasks.
+
 ```{r}
 raw_inflation <- read_csv("data/inflation_country.csv")
 
@@ -374,8 +412,8 @@ print(paste("Train Data Rows:", nrow(train_data)))
 print(paste("Test Data Rows:", nrow(test_data)))
 
 # 4. Save the new train/test data (overwriting previous files)
-#write_csv(train_data_v2, "inflation_train_data.csv")
-#write_csv(test_data_v2, "inflation_test_data.csv")
+#write_csv(train_data, "inflation_train_data.csv")
+#write_csv(test_data, "inflation_test_data.csv")
 ```
 
 \newpage
@@ -388,35 +426,20 @@ print(paste("Test Data Rows:", nrow(test_data)))
   - Estimating a model that you believe is appropriate after conducting your EDA.
   - Evaluating the model performance through diagnostic plots and making any necessary adjustments to satisfy key assumptions.
 
-### Answer
-
 \newpage
-Smoother and the EDA. 
+### Q2 Part2 step 1: data wrangling (creating smoother) and EDA. 
 
-ACF Plot (left):
+As shown in the output of the code chunk below: 
 
-The ACF declines slowly and smoothly from 1.0 toward 0, taking many lags (over 24 months) to taper off.
+The ACF declines slowly and smoothly from 1 toward 0, taking many lags to taper off. This gradual decay indicates persistence: each month’s inflation rate is highly correlated with many months prior. Such slow decay suggests an autoregressive (AR) component rather than an MA one.
 
-This gradual decay indicates strong persistence — each month’s inflation rate is highly correlated with many months prior.
+ PACF has a large spike at lag 1, followed by much smaller and statistically insignificant spikes. This pattern is the signof an AR(1) process.
 
-Such slow decay suggests an autoregressive (AR) component rather than a pure moving-average (MA) one.
+Visual check (smoothed plot): Inflation has long cycles (multi-year swings) and persistent trends rather than sharp, short-run oscillations. This visually reinforces the conclusion that inflation is highly persistent and well captured by an AR model.
 
-PACF Plot (right):
-
-The PACF has a large spike at lag 1, followed by much smaller and statistically insignificant spikes.
-
-This pattern — PACF cuts off after lag 1 while ACF decays gradually — is the textbook signature of an AR(1) process.
-
-Visual check (smoothed plot):
-
-Inflation has long cycles (multi-year swings) and persistent trends rather than sharp, short-run oscillations.
-
-That visually reinforces the conclusion that inflation is highly persistent and well captured by an AR model.
-
-Given these diagnostics, we’ll start by estimating an AR(1) model for U.S. inflation using the training data, and then we’ll test whether a higher-order AR (e.g., AR(2) or AR(3)) or an ARIMA with differencing gives any improvement.
+Given these diagnostics, I will start by estimating an AR(1) model for U.S. inflation using the training data, and then I'll test whether a higher-order AR (e.g., AR(2) or AR(3)) or an ARIMA with differencing gives any improvement.
 
 ```{r}
-library(slider)
 
 train_data_smoothed <- 
   train_data %>%
@@ -467,11 +490,11 @@ x = "Lag (months)", y = "Partial Autocorrelation")
 
 p_acf + p_pacf
 
-
 ```
 
 \newpage
-### Q2 Part 2 - continued 
+### Q2 Part 2 step 2 
+
 **Estimating a model**
 
 The code block below shows the estimated model. The ar() selects AR(1). "order" in summary of the fitted model is 1, but "ar" in summary is 25. This is because order 25 gives the smallest aic (normalized to 0, same as the async). 
@@ -484,7 +507,7 @@ select(date, USA) %>%
 
 summary(usa_infl_ar1)
 
-usa_infl_ar1$aic
+#usa_infl_ar1$aic
 ```
 \newpage
 ### Q2 Part 2 step 3
@@ -508,11 +531,12 @@ p-value is 0.0004 < 0.05, and we reject the null. Statistically, there is autoco
 
 
 
-Overall, this AR(1) model captures most of the serial dependence, but not all.
+Overall, this AR(1) model captures some of the serial dependence, but not all.
 
 To address this, a natural adjustment is to allow for additional autoregressive lags (as shown in the second code chunk below) but the Ljung-Box test still comes back rejecting the null. 
 
-So, perhaps the stationary assumption needs to be adjusted. I stopped here for Q2 Part 2.
+So, perhaps the stationary assumption or the white-noise assumption needs to be adjusted. I stopped here for Q2 Part 2.
+
 ```{r}
 
 #Extract residuals
@@ -576,6 +600,8 @@ Box.test(ar3_resid, lag = 12, type = "Ljung-Box")
 
 
 ```
+
+\newpage
 ## (5 points) Part-3: Leveraging Other Countries
 
 1. Examine how correlated (lagged) GBR and CAN inflation is with the US. Do you think prior inflation data in these countries can help forecast inflation in the US?
@@ -585,40 +611,34 @@ Box.test(ar3_resid, lag = 12, type = "Ljung-Box")
   - Evaluate the model performance through diagnostic plots and making any necessary adjustments to satisfy key assumptions.
 
 \newpage
+
 ### Q2 Part 3 
 
-Contemporaneous correlation
+1. Contemporaneous correlation
 
-USA–GBR = 0.83, USA–CAN = 0.88 → strong positive co-movement across all three countries.
+USA–GBR = 0.83, USA–CAN = 0.88. This support positive co-movement across all three countries. Inflation rates rise and fall together, reflecting shared global shocks (oil prices, supply chain effects, etc.).
 
-Inflation rates rise and fall together, reflecting shared global shocks (oil prices, supply chain effects, etc.).
+2. Cross-correlation functions (CCFs)
 
-Cross-correlation functions (CCFs)
+For GBR, the largest correlations appear at positive lags (12–60 months), meaning GBR inflation tends to lead U.S. inflation by roughly 1 year or more. For CAN, similar pattern but slightly stronger correlations at shorter leads (12–24 months). This means that Canadian inflation seems to anticipate U.S. inflation by about 1 year.
 
-For GBR, the largest correlations appear at positive lags (12–60 months) → meaning GBR inflation tends to lead U.S. inflation by roughly 1 year or more.
+This may be caused by the fact that both the U.K. and Canada are relatively small and open economies affected by global factors earlier than the U.S.
 
-For CAN, similar pattern but slightly stronger correlations at shorter leads (12–24 months).
-→ Canadian inflation seems to anticipate U.S. inflation by about 1 year.
-
-Economic intuition
-
-Both the U.K. and Canada are open, commodity-linked economies affected by global factors earlier than the U.S.
+3. Modeling implication
 
 These lead–lag patterns suggest that lagged GBR and CAN inflation can serve as useful predictors (exogenous regressors) for forecasting U.S. inflation.
 
-Interpretation of CCFs
+4. Interpretation of CCFs (suggested by ChatGPT)
 
 Both CCFs (GBR–USA and CAN–USA) show high positive correlation across nearly all lags, peaking at slightly positive lags.
 
-In the convention used (ccf(GBR, USA)), positive lags mean GBR (or CAN) leads the USA.
-→ Hence, inflation shocks in the U.K. and Canada tend to precede similar movements in the U.S. by roughly 6–12 months, consistent with your earlier table.
+In the convention used (ccf(GBR, USA)), positive lags mean GBR (or CAN) leads the USA. Hence, inflation shocks in the U.K. and Canada tend to precede similar movements in the U.S. by roughly 6–12 months, consistent with my earlier EDA.
 
 The correlations are persistently high (0.8–0.9), which indicates these economies are not just contemporaneously linked but also move together with a small lead of GBR and CAN.
-
-
 Next I'll add lagged GBR and CAN inflation (say, 1-month and 12-month lags) as exogenous variables in an ARIMA model for the U.S.:
 
-####After fitting the model
+***
+**After fitting the model**
 
 
 $$
@@ -632,6 +652,7 @@ AICc = −5332.7 and BIC = −5280.5, both lower than the earlier AR-only models
 
 The inclusion of foreign inflation terms and richer ARIMA errors drastically reduced the residual variance (sigma_squared is about 7.6 × 10⁻⁶). For Ljung-Box test the p-value is 2.12e-5, and we can reject the null of white-noise residuals.
 
+***
 
 **For diagnostics** 
 
@@ -642,8 +663,6 @@ The histogram shows that residuals are symmetric and bell-shaped.
 The residual ACF shows that most lags within CI bounds, but spikes at every lag = 12 months. Together with the Ljung-Box test, the white-noise assumption is most likely not met (perhaps due to seasonality).
 
 ```{r}
-
-# --- Q2 Part 3, Step 1: Cross-correlations USA vs GBR/CAN (training only) ---
 
 # Keep the three series on the training range
 train_wide <- train_data %>%
@@ -660,15 +679,13 @@ cont_corr <- train_wide %>%
 print(cont_corr)
 
 # 2) Cross-correlation function (CCF) plots up to ±24 months
-# Convention (stats::ccf default): positive lag means the FIRST argument leads the second
-# e.g., ccf(x = GBR, y = USA, lag = +k) ⇒ GBR_t leads USA_t by k months.
 ccf_gbr <- stats::ccf(x = train_wide$GBR, y = train_wide$USA, lag.max = 24, plot = FALSE, na.action = na.omit)
 ccf_can <- stats::ccf(x = train_wide$CAN, y = train_wide$USA, lag.max = 24, plot = FALSE, na.action = na.omit)
 
-# Helper to turn ccf object into a tidy table and show top lags by |corr|
+# Helper to turn ccf object into a tidy table and show top lags by corr
 to_tbl <- function(ccf_obj, who_leads, lag_max = 24, top_n = 8) {
   tibble(
-    lag = as.integer(ccf_obj$lag * 12),   # convert to months if ts attributes present; safe cast here
+    lag = as.integer(ccf_obj$lag * 12),   
     ccf = as.numeric(ccf_obj$acf)
   ) %>%
     arrange(desc(abs(ccf))) %>%
@@ -686,7 +703,7 @@ top_can <- to_tbl(ccf_can, "CAN")
 print(top_gbr)
 print(top_can)
 
-# 3) Optional base plots (nice for the report)
+# 3) Plots
 par(mfrow = c(1,2))
 stats::ccf(train_wide$GBR, train_wide$USA, lag.max = 24, main = "CCF: GBR leads (+) / lags (−) vs USA")
 stats::ccf(train_wide$CAN, train_wide$USA, lag.max = 24, main = "CCF: CAN leads (+) / lags (−) vs USA")
@@ -696,7 +713,7 @@ par(mfrow = c(1,1))
 
 
 ```{r}
-# --- Q2 Part 3, Step 2: ARIMAX using GBR and CAN lags as exogenous regressors ---
+# Q2 Part 3, Step 2: ARIMAX using GBR and CAN lags as exogenous regressors 
 
 # Create lagged predictors
 train_exo <- train_data %>%
@@ -728,90 +745,33 @@ Forecast inflation in 2022 and beyond (i.e. the test data) in the US using the v
 Which model is the best? Explain your results.
 
 ### Answer
+**I relied on ChatGPT in producing the code. But I have went through every line and made extensive edits.**
+
 Two models were estimated using the training data:
 
-base_auto: a univariate ARIMA for U.S. inflation only.
+ - base_auto: a univariate ARIMA for U.S. inflation only.
 
-arimax: an ARIMA with exogenous regressors (GBR and CAN inflation lags 1 and 12).
+ - arimax: an ARIMA with **exogenous** regressors (GBR and CAN inflation lags 1 and 12).
 
+Out-of-sample forecast accuracy favors the ARIMAX model:
 
+RMSE = 0.0107 vs 0.0130 (17 % improvement)
 
-Out-of-sample forecast accuracy clearly favors the ARIMAX model:
+MAE = 0.0079 vs 0.0114 (31 % improvement)
 
-RMSE ≈ 0.0107 vs 0.0130 (≈ 17 % improvement)
+MAPE = 11.2 % vs 20.2 %.
 
-MAE ≈ 0.0079 vs 0.0114 (≈ 31 % improvement)
+The information criteria are not directly comparable in magnitude (because the models use different likelihood structures), but both are strongly negative, implying good fit. Within each modeling framework, the ARIMAX model achieves far smaller residual variance, suggesting that most systematic variation has been absorbed by the exogenous lags rather than left in the ARIMA errors.
 
-MAPE ≈ 11.2 % vs 20.2 %.
+For **economic interpretation**, Lagged inflation from Canada and the U.K. significantly improves prediction of U.S. inflation, consistent with the cross-correlation evidence that both countries tend to lead U.S. inflation by about 6–12 months. The positive short-lag coefficients (beta1 = 0.26 for GBR lag1 and beta2 = 0.69 for CAN lag1) capture this short-term co-movement, while the small negative 12-month lags suggest long-run normalization.
 
-The information criteria are not directly comparable in magnitude (because the models use different likelihood structures), but both are strongly negative, implying good fit. Within each modeling framework, the ARIMAX model achieves far smaller residual variance (σ² ≈ 1.56 × 10⁻⁴ vs 7.81 × 10⁻⁶ for base_auto), suggesting that most systematic variation has been absorbed by the exogenous lags rather than left in the ARIMA errors.
+The ARIMAX specification leveraging lagged foreign inflation provides superior forecasting performance for U.S. inflation relative to a univariate ARIMA. This indicates that incorporating these exogenous variables adds predictive power and produces more accurate out-of-sample forecasts.
 
-Economic interpretation
-
-Lagged inflation from Canada and the U.K. significantly improves prediction of U.S. inflation, consistent with the cross-correlation evidence that both countries tend to lead U.S. inflation by about 6–12 months. The positive short-lag coefficients (β₁ ≈ 0.26 for GBRₜ₋₁ and β₂ ≈ 0.69 for CANₜ₋₁) capture this short-term co-movement, while the small negative 12-month lags suggest long-run normalization.
-
-The ARIMAX specification leveraging lagged foreign inflation provides superior forecasting performance for U.S. inflation relative to a univariate ARIMA.
-This indicates that incorporating international price dynamics adds meaningful predictive power and produces more accurate out-of-sample forecasts.
 ```{r}
-# --- Q2 Part 4: Forecasts & model comparison (baseline vs ARIMAX) ---
-
-library(fable)
-library(fabletools)
-
-# 0) Rebuild lags on the FULL data so test rows have valid lag12 values
-full_exo <- raw_inflation %>%
-  select(date, USA, GBR, CAN) %>%
-  mutate(date = as_date(date)) %>%
-  as_tsibble(index = date) %>%
-  mutate(
-    GBR_lag1  = lag(GBR, 1),
-    CAN_lag1  = lag(CAN, 1),
-    GBR_lag12 = lag(GBR, 12),
-    CAN_lag12 = lag(CAN, 12)
-  )
-
-# 1) Split into train/test using your split date
-split_date <- ymd("2022-01-01")
-train_exo <- full_exo %>% filter(date <  split_date) %>% filter(!is.na(GBR_lag12))
-test_exo  <- full_exo %>% filter(date >= split_date) %>% filter(!is.na(GBR_lag12))
-
-# 2) Fit two models on training data
-fits <- model(
-  train_exo,
-  # (a) Baseline: automatic ARIMA on USA only (allows seasonal ARIMA)
-  base_auto = ARIMA(USA),
-  # (b) ARIMAX: add lagged GBR/CAN (short & annual)
-  arimax    = ARIMA(USA ~ GBR_lag1 + CAN_lag1 + GBR_lag12 + CAN_lag12)
-)
-
-report(fits %>% select(arimax))
-report(fits %>% select(base_auto))
-
-# 3) Forecast over the test horizon
-fc <- forecast(fits, new_data = test_exo)
-
-# 4) Compare out-of-sample accuracy (test set only)
-acc_test <- accuracy(fc, test_exo) %>%
-  select(.model, RMSE, MAE, MAPE, MASE, AIC, AICc, BIC)
-
-acc_test
-
-
-
-# ---- Q2 Part 4: Forecasts & Model Comparison (baseline ARIMA vs ARIMAX) ----
-
-library(tsibble)
-library(fable)
-library(fabletools)
-library(lubridate)
-library(dplyr)
-library(tidyr)
-
-# 0) Start from your existing 'inflation_arimax_data' (already a tsibble with date=yearmonth)
 #    Ensure it is monthly-regular and fill implicit gaps before creating lags.
 full_exo <- inflation_arimax_data %>%
   arrange(date) %>%
-  fill_gaps() %>%                      # <-- resolves implicit gaps
+  fill_gaps() %>%                      
   mutate(
     GBR_lag1  = dplyr::lag(GBR, 1),
     CAN_lag1  = dplyr::lag(CAN, 1),
@@ -824,7 +784,7 @@ split_month <- yearmonth("2022-01")
 
 train_exo <- full_exo %>%
   filter(date < split_month) %>%
-  drop_na(USA)  # keep USA observed; exog NAs will be dropped automatically by ARIMA()
+  drop_na(USA)  
 
 test_exo <- full_exo %>%
   filter(date >= split_month) %>%
@@ -837,9 +797,9 @@ fits <- model(
   arimax    = ARIMA(USA ~ GBR_lag1 + CAN_lag1 + GBR_lag12 + CAN_lag12)  # uses exogenous lags
 )
 
-# Optional: detailed summary for ARIMAX
-report(fits %>% select(arimax))
-glance(fits)
+# detailed summary for ARIMAX
+#report(fits %>% select(arimax))
+#glance(fits)
 
 # 3) Forecast on the test horizon (fable will use exogenous values from test_exo)
 fc <- forecast(fits, new_data = test_exo)
