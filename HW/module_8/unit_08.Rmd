@@ -21,6 +21,8 @@ library(lmtest)
 
 library(nycflights13)
 library(blsR)
+
+library(fable)
 ```
 
 ```{r set themes}
@@ -41,8 +43,18 @@ Why is it important to know whether a process is a $AR$ or an $MA$ (or a combina
 
 ### Q1P1 Answer 
 
+**Knowing whether a process is AR, MA, or a mix matters because it defines how persistence and shocks drive the series and how we model and forecast it.**
+
+Interpretation:
+
+ - AR: current values depend on past values (persistence).
+
+ - MA: current values depend on past shocks (transitory effects).
+
+Forecasting:AR forecasts rely on past predicted values; MA forecasts decay faster as past shocks fade. Correctly identifying the process ensures accurate model specification and reliable forecasts.
 
 
+\newpage
 ## (1 point) Part-2: Pull in (and clean up) your data pipeline. 
 
 In the previous homework, you built a data pipeline to draw data from the BLS. We are asking you to re-use, and if you think it is possible, to improve the code that you wrote for this pipeline in the previous homework. 
@@ -50,6 +62,9 @@ In the previous homework, you built a data pipeline to draw data from the BLS. W
 - Are there places where you took "shortcuts" that could be more fully developed?
 
 - Are the processes that could be made more modular, or better documented so that they are easier for you to understand what they are doing? You've been away from the code that you wrote for a few weeks, and so it might feel like "discovering" the code of a *mad-person* (Who even wrote this???)
+
+### Answer
+
 
 ```{r}
 
@@ -328,7 +343,7 @@ sum(is.na(raw_inflation))
 inflation_arimax_data <- 
   raw_inflation %>%
   select(date, USA, GBR, CAN) %>%
-  mutate(date = as_date(date)) %>%
+  mutate(date = yearmonth(date)) %>%
   # Convert to tsibble early for easy lag calculation
   as_tsibble(index = date) %>%
   
@@ -373,6 +388,194 @@ print(paste("Test Data Rows:", nrow(test_data)))
   - Estimating a model that you believe is appropriate after conducting your EDA.
   - Evaluating the model performance through diagnostic plots and making any necessary adjustments to satisfy key assumptions.
 
+### Answer
+
+\newpage
+Smoother and the EDA. 
+
+ACF Plot (left):
+
+The ACF declines slowly and smoothly from 1.0 toward 0, taking many lags (over 24 months) to taper off.
+
+This gradual decay indicates strong persistence — each month’s inflation rate is highly correlated with many months prior.
+
+Such slow decay suggests an autoregressive (AR) component rather than a pure moving-average (MA) one.
+
+PACF Plot (right):
+
+The PACF has a large spike at lag 1, followed by much smaller and statistically insignificant spikes.
+
+This pattern — PACF cuts off after lag 1 while ACF decays gradually — is the textbook signature of an AR(1) process.
+
+Visual check (smoothed plot):
+
+Inflation has long cycles (multi-year swings) and persistent trends rather than sharp, short-run oscillations.
+
+That visually reinforces the conclusion that inflation is highly persistent and well captured by an AR model.
+
+Given these diagnostics, we’ll start by estimating an AR(1) model for U.S. inflation using the training data, and then we’ll test whether a higher-order AR (e.g., AR(2) or AR(3)) or an ARIMA with differencing gives any improvement.
+
+```{r}
+library(slider)
+
+train_data_smoothed <- 
+  train_data %>%
+  select(USA) %>%
+  mutate(
+    US_smoother = slide_dbl(
+      .x = USA,
+      .f = mean,
+      .before = 6,
+      .after = 0,
+      .complete = FALSE
+    )
+  )
+
+#class(train_data_smoothed)
+
+smoother_plot <- train_data_smoothed %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = USA, color = "Original USA Inflation")) +
+  geom_line(aes(y = US_smoother, color = "7-Month Backward Smoother"), linewidth = 1) +
+  labs(
+    title = "USA Inflation Rate: Original Series vs. 7-Month Smoothed Trend",
+    y = "Inflation Rate (%)",
+    x = "Year",
+    color = "Series"
+  ) +
+  scale_color_manual(values = c("Original USA Inflation" = "gray50", "7-Month Backward Smoother" = "blue")) +
+  theme_minimal()
+
+smoother_plot
+
+us_train <- train_data %>%
+select(date, USA) %>%
+as_tsibble(index = date)
+
+sum(is.na(train_data$USA))
+
+acf_us <- us_train %>% ACF(USA, lag_max = 60)
+pacf_us <- us_train %>% PACF(USA, lag_max = 60)
+
+p_acf <- autoplot(acf_us) +
+labs(title = "ACF: USA Inflation (Training Set)",
+x = "Lag (months)", y = "Autocorrelation")
+
+p_pacf <- autoplot(pacf_us) +
+labs(title = "PACF: USA Inflation (Training Set)",
+x = "Lag (months)", y = "Partial Autocorrelation")
+
+p_acf + p_pacf
+
+
+```
+
+\newpage
+### Q2 Part 2 - continued 
+**Estimating a model**
+
+The code block below shows the estimated model. The ar() selects AR(1). "order" in summary of the fitted model is 1, but "ar" in summary is 25. This is because order 25 gives the smallest aic (normalized to 0, same as the async). 
+
+With some googling and ChatGPTing around, the most plausible explanation is that sometimes with highly persistent data (like inflation), the yule-walker algorithm overfits at higher orders — it keeps adding lags until it “almost perfectly fits” the data, driving the AIC down. 
+```{r}
+usa_infl_ar1 <- train_data %>%
+select(date, USA) %>%
+  ar()
+
+summary(usa_infl_ar1)
+
+usa_infl_ar1$aic
+```
+\newpage
+### Q2 Part 2 step 3
+
+**Evaluating the model performance through diagnostic plots and making any necessary adjustments to satisfy key assumptions.**
+
+As the code block below shows: 
+
+1. Residual time plot
+The residuals fluctuate randomly around zero without any visible trends or structural breaks. This indicates the mean equation is probably well specified.
+
+2. Histogram
+Residuals are approximately bell-shaped and symmetric around zero. This suggests the normality assumption for AR(1) errors is likely reasonable.
+
+3. ACF and PACF of residuals
+No spikes exceed the blue 95 % confidence bands beyond lag 0. This means no significant serial correlation remains visually.
+
+4. Ljung–Box test
+p-value is 0.0004 < 0.05, and we reject the null. Statistically, there is autocorrelation left in the residuals even though it’s small visually.
+
+
+
+
+Overall, this AR(1) model captures most of the serial dependence, but not all.
+
+To address this, a natural adjustment is to allow for additional autoregressive lags (as shown in the second code chunk below) but the Ljung-Box test still comes back rejecting the null. 
+
+So, perhaps the stationary assumption needs to be adjusted. I stopped here for Q2 Part 2.
+```{r}
+
+#Extract residuals
+ar1_resid <- usa_infl_ar1$resid
+
+#Plot residuals over time
+plot.ts(ar1_resid,
+main = "AR(1) Residuals Over Time",
+ylab = "Residuals",
+xlab = "Time")
+
+#Histogram of residuals
+hist(ar1_resid, breaks = 30,
+main = "Histogram of AR(1) Residuals",
+xlab = "Residuals")
+
+#ACF of residuals
+acf(ar1_resid, na.action = na.pass,
+main = "ACF of AR(1) Residuals")
+
+#PACF of residuals
+pacf(ar1_resid, na.action = na.pass,
+main = "PACF of AR(1) Residuals")
+
+#Ljung-Box test for white noise
+Box.test(ar1_resid, lag = 12, type = "Ljung-Box")
+
+```
+
+```{r}
+usa_infl_ar3 <- train_data %>%
+select(date, USA) %>%
+  ar(order.max = 3)
+
+summary(usa_infl_ar3)
+
+#Extract residuals
+ar3_resid <- usa_infl_ar3$resid
+
+#Plot residuals over time
+plot.ts(ar3_resid,
+main = "AR(3) Residuals Over Time",
+ylab = "Residuals",
+xlab = "Time")
+
+#Histogram of residuals
+hist(ar3_resid, breaks = 30,
+main = "Histogram of AR(3) Residuals",
+xlab = "Residuals")
+
+#ACF of residuals
+acf(ar3_resid, na.action = na.pass,
+main = "ACF of AR(3) Residuals")
+
+#PACF of residuals
+pacf(ar3_resid, na.action = na.pass,
+main = "PACF of AR(3) Residuals")
+
+#Ljung-Box test for white noise
+Box.test(ar3_resid, lag = 12, type = "Ljung-Box")
+
+
+```
 ## (5 points) Part-3: Leveraging Other Countries
 
 1. Examine how correlated (lagged) GBR and CAN inflation is with the US. Do you think prior inflation data in these countries can help forecast inflation in the US?
@@ -381,8 +584,276 @@ print(paste("Test Data Rows:", nrow(test_data)))
   - Estimate a model that you believe is appropriate after conducting your EDA.
   - Evaluate the model performance through diagnostic plots and making any necessary adjustments to satisfy key assumptions.
 
+\newpage
+### Q2 Part 3 
+
+Contemporaneous correlation
+
+USA–GBR = 0.83, USA–CAN = 0.88 → strong positive co-movement across all three countries.
+
+Inflation rates rise and fall together, reflecting shared global shocks (oil prices, supply chain effects, etc.).
+
+Cross-correlation functions (CCFs)
+
+For GBR, the largest correlations appear at positive lags (12–60 months) → meaning GBR inflation tends to lead U.S. inflation by roughly 1 year or more.
+
+For CAN, similar pattern but slightly stronger correlations at shorter leads (12–24 months).
+→ Canadian inflation seems to anticipate U.S. inflation by about 1 year.
+
+Economic intuition
+
+Both the U.K. and Canada are open, commodity-linked economies affected by global factors earlier than the U.S.
+
+These lead–lag patterns suggest that lagged GBR and CAN inflation can serve as useful predictors (exogenous regressors) for forecasting U.S. inflation.
+
+Interpretation of CCFs
+
+Both CCFs (GBR–USA and CAN–USA) show high positive correlation across nearly all lags, peaking at slightly positive lags.
+
+In the convention used (ccf(GBR, USA)), positive lags mean GBR (or CAN) leads the USA.
+→ Hence, inflation shocks in the U.K. and Canada tend to precede similar movements in the U.S. by roughly 6–12 months, consistent with your earlier table.
+
+The correlations are persistently high (0.8–0.9), which indicates these economies are not just contemporaneously linked but also move together with a small lead of GBR and CAN.
+
+
+Next I'll add lagged GBR and CAN inflation (say, 1-month and 12-month lags) as exogenous variables in an ARIMA model for the U.S.:
+
+####After fitting the model
+
+
+$$
+USA_t = \alpha + \beta_0 GBR_{t-1} + \beta_1 CAN_{t-1} + \beta_2 GBR_{t-12} + \beta_2 CAN_{t-12} + \epsilon_t
+$$
+As shown by the report() for the fitted model, in the second code chunk below, **all coefficients have the expected signs and economically interpretable magnitudes in that short-run co-movement (positive) and long-run normalization (negative).**
+
+In terms of model fit: 
+
+AICc = −5332.7 and BIC = −5280.5, both lower than the earlier AR-only models. This is a significant improvement in explanatory power of the model.
+
+The inclusion of foreign inflation terms and richer ARIMA errors drastically reduced the residual variance (sigma_squared is about 7.6 × 10⁻⁶). For Ljung-Box test the p-value is 2.12e-5, and we can reject the null of white-noise residuals.
+
+
+**For diagnostics** 
+
+Residuals are centered around zero, without visible trend, and variance looks stable.
+
+The histogram shows that residuals are symmetric and bell-shaped.
+
+The residual ACF shows that most lags within CI bounds, but spikes at every lag = 12 months. Together with the Ljung-Box test, the white-noise assumption is most likely not met (perhaps due to seasonality).
+
+```{r}
+
+# --- Q2 Part 3, Step 1: Cross-correlations USA vs GBR/CAN (training only) ---
+
+# Keep the three series on the training range
+train_wide <- train_data %>%
+  select(date, USA, GBR, CAN) %>%
+  as_tsibble(index = date)
+
+# 1) Quick contemporaneous correlations
+cont_corr <- train_wide %>%
+  as_tibble() %>%
+  summarise(
+    cor_USA_GBR_0 = cor(USA, GBR, use = "complete.obs"),
+    cor_USA_CAN_0 = cor(USA, CAN, use = "complete.obs")
+  )
+print(cont_corr)
+
+# 2) Cross-correlation function (CCF) plots up to ±24 months
+# Convention (stats::ccf default): positive lag means the FIRST argument leads the second
+# e.g., ccf(x = GBR, y = USA, lag = +k) ⇒ GBR_t leads USA_t by k months.
+ccf_gbr <- stats::ccf(x = train_wide$GBR, y = train_wide$USA, lag.max = 24, plot = FALSE, na.action = na.omit)
+ccf_can <- stats::ccf(x = train_wide$CAN, y = train_wide$USA, lag.max = 24, plot = FALSE, na.action = na.omit)
+
+# Helper to turn ccf object into a tidy table and show top lags by |corr|
+to_tbl <- function(ccf_obj, who_leads, lag_max = 24, top_n = 8) {
+  tibble(
+    lag = as.integer(ccf_obj$lag * 12),   # convert to months if ts attributes present; safe cast here
+    ccf = as.numeric(ccf_obj$acf)
+  ) %>%
+    arrange(desc(abs(ccf))) %>%
+    mutate(interpretation = ifelse(lag > 0,
+                                   paste0(who_leads, " leads USA by ", lag, " mo"),
+                                   ifelse(lag < 0,
+                                          paste0("USA leads ", who_leads, " by ", abs(lag), " mo"),
+                                          "contemporaneous"))) %>%
+    slice(1:top_n)
+}
+
+top_gbr <- to_tbl(ccf_gbr, "GBR")
+top_can <- to_tbl(ccf_can, "CAN")
+
+print(top_gbr)
+print(top_can)
+
+# 3) Optional base plots (nice for the report)
+par(mfrow = c(1,2))
+stats::ccf(train_wide$GBR, train_wide$USA, lag.max = 24, main = "CCF: GBR leads (+) / lags (−) vs USA")
+stats::ccf(train_wide$CAN, train_wide$USA, lag.max = 24, main = "CCF: CAN leads (+) / lags (−) vs USA")
+par(mfrow = c(1,1))
+
+```
+
+
+```{r}
+# --- Q2 Part 3, Step 2: ARIMAX using GBR and CAN lags as exogenous regressors ---
+
+# Create lagged predictors
+train_exo <- train_data %>%
+  mutate(
+    GBR_lag1 = lag(GBR, 1),
+    CAN_lag1 = lag(CAN, 1),
+    GBR_lag12 = lag(GBR, 12),
+    CAN_lag12 = lag(CAN, 12)
+  ) %>%
+  filter(!is.na(GBR_lag12))   # drop initial NAs
+
+# Fit ARIMA with exogenous regressors
+fit_arimax <- train_exo %>%
+  model(ARIMA(USA ~ GBR_lag1 + CAN_lag1 + GBR_lag12 + CAN_lag12))
+
+report(fit_arimax)
+
+# Diagnostics
+fit_arimax %>% gg_tsresiduals()
+augment(fit_arimax) %>% features(.innov, ljung_box, lag = 12, dof = 8)
+
+```
+
+\newpage
 ## (3 points) Part-4: Forecasting and Model Comparison
 
 Forecast inflation in 2022 and beyond (i.e. the test data) in the US using the various models you created. Include any models that did not necessarily satisfy the assumption of white noise in the residuals that you might have originally tried.
 
 Which model is the best? Explain your results.
+
+### Answer
+Two models were estimated using the training data:
+
+base_auto: a univariate ARIMA for U.S. inflation only.
+
+arimax: an ARIMA with exogenous regressors (GBR and CAN inflation lags 1 and 12).
+
+
+
+Out-of-sample forecast accuracy clearly favors the ARIMAX model:
+
+RMSE ≈ 0.0107 vs 0.0130 (≈ 17 % improvement)
+
+MAE ≈ 0.0079 vs 0.0114 (≈ 31 % improvement)
+
+MAPE ≈ 11.2 % vs 20.2 %.
+
+The information criteria are not directly comparable in magnitude (because the models use different likelihood structures), but both are strongly negative, implying good fit. Within each modeling framework, the ARIMAX model achieves far smaller residual variance (σ² ≈ 1.56 × 10⁻⁴ vs 7.81 × 10⁻⁶ for base_auto), suggesting that most systematic variation has been absorbed by the exogenous lags rather than left in the ARIMA errors.
+
+Economic interpretation
+
+Lagged inflation from Canada and the U.K. significantly improves prediction of U.S. inflation, consistent with the cross-correlation evidence that both countries tend to lead U.S. inflation by about 6–12 months. The positive short-lag coefficients (β₁ ≈ 0.26 for GBRₜ₋₁ and β₂ ≈ 0.69 for CANₜ₋₁) capture this short-term co-movement, while the small negative 12-month lags suggest long-run normalization.
+
+The ARIMAX specification leveraging lagged foreign inflation provides superior forecasting performance for U.S. inflation relative to a univariate ARIMA.
+This indicates that incorporating international price dynamics adds meaningful predictive power and produces more accurate out-of-sample forecasts.
+```{r}
+# --- Q2 Part 4: Forecasts & model comparison (baseline vs ARIMAX) ---
+
+library(fable)
+library(fabletools)
+
+# 0) Rebuild lags on the FULL data so test rows have valid lag12 values
+full_exo <- raw_inflation %>%
+  select(date, USA, GBR, CAN) %>%
+  mutate(date = as_date(date)) %>%
+  as_tsibble(index = date) %>%
+  mutate(
+    GBR_lag1  = lag(GBR, 1),
+    CAN_lag1  = lag(CAN, 1),
+    GBR_lag12 = lag(GBR, 12),
+    CAN_lag12 = lag(CAN, 12)
+  )
+
+# 1) Split into train/test using your split date
+split_date <- ymd("2022-01-01")
+train_exo <- full_exo %>% filter(date <  split_date) %>% filter(!is.na(GBR_lag12))
+test_exo  <- full_exo %>% filter(date >= split_date) %>% filter(!is.na(GBR_lag12))
+
+# 2) Fit two models on training data
+fits <- model(
+  train_exo,
+  # (a) Baseline: automatic ARIMA on USA only (allows seasonal ARIMA)
+  base_auto = ARIMA(USA),
+  # (b) ARIMAX: add lagged GBR/CAN (short & annual)
+  arimax    = ARIMA(USA ~ GBR_lag1 + CAN_lag1 + GBR_lag12 + CAN_lag12)
+)
+
+report(fits %>% select(arimax))
+report(fits %>% select(base_auto))
+
+# 3) Forecast over the test horizon
+fc <- forecast(fits, new_data = test_exo)
+
+# 4) Compare out-of-sample accuracy (test set only)
+acc_test <- accuracy(fc, test_exo) %>%
+  select(.model, RMSE, MAE, MAPE, MASE, AIC, AICc, BIC)
+
+acc_test
+
+
+
+# ---- Q2 Part 4: Forecasts & Model Comparison (baseline ARIMA vs ARIMAX) ----
+
+library(tsibble)
+library(fable)
+library(fabletools)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+
+# 0) Start from your existing 'inflation_arimax_data' (already a tsibble with date=yearmonth)
+#    Ensure it is monthly-regular and fill implicit gaps before creating lags.
+full_exo <- inflation_arimax_data %>%
+  arrange(date) %>%
+  fill_gaps() %>%                      # <-- resolves implicit gaps
+  mutate(
+    GBR_lag1  = dplyr::lag(GBR, 1),
+    CAN_lag1  = dplyr::lag(CAN, 1),
+    GBR_lag12 = dplyr::lag(GBR, 12),
+    CAN_lag12 = dplyr::lag(CAN, 12)
+  )
+
+# 1) Split with a monthly cut (use yearmonth to match your index)
+split_month <- yearmonth("2022-01")
+
+train_exo <- full_exo %>%
+  filter(date < split_month) %>%
+  drop_na(USA)  # keep USA observed; exog NAs will be dropped automatically by ARIMA()
+
+test_exo <- full_exo %>%
+  filter(date >= split_month) %>%
+  drop_na(USA, GBR_lag1, CAN_lag1, GBR_lag12, CAN_lag12)  # ensure exogs available in test
+
+# 2) Fit models (on the regularized training tsibble)
+fits <- model(
+  train_exo,
+  base_auto = ARIMA(USA),                                            # univariate baseline
+  arimax    = ARIMA(USA ~ GBR_lag1 + CAN_lag1 + GBR_lag12 + CAN_lag12)  # uses exogenous lags
+)
+
+# Optional: detailed summary for ARIMAX
+report(fits %>% select(arimax))
+glance(fits)
+
+# 3) Forecast on the test horizon (fable will use exogenous values from test_exo)
+fc <- forecast(fits, new_data = test_exo)
+
+
+# 4) Compare out-of-sample accuracy (test set only)
+acc_test <- accuracy(fc, test_exo) %>%
+  select(.model, RMSE, MAE, MAPE, MASE)
+
+acc_test
+
+info_criteria <- glance(fits) %>%
+  select(.model, AIC, AICc, BIC)
+
+info_criteria
+
+```
