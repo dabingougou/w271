@@ -1,0 +1,471 @@
+---
+title: "Unit 13 Live Session"
+output: 'pdf_document'  
+classoption: landscape
+editor_options: 
+  chunk_output_type: console
+---
+
+# Analysis of Panel Data: Fixed Effect and Random Effect Models
+
+![South Hall](./images/south_hall.png){width=50%}
+
+\newpage
+
+## Class Announcements
+
+## Roadmap
+
+Last week:
+
+- Fixed vs. Random Effects
+
+This Week:
+
+- Mixed Effects Models
+
+Next Week:
+
+- Last session! We will have an open Q&A so come with any questions you have. Feel free to ask anything even if unrelated to the course!
+
+\newpage
+
+## Start-up Code
+```{r, message=FALSE, error=FALSE, warning=FALSE}
+if(!"plyr"%in%rownames(installed.packages())) {install.packages("plyr")}
+library(plyr)
+
+if(!"dplyr"%in%rownames(installed.packages())) {install.packages("dplyr")}
+library(dplyr)
+
+if(!"ggplot2"%in%rownames(installed.packages())) {install.packages("ggplot2")}
+library(ggplot2)
+
+if(!"ggthemes"%in%rownames(installed.packages())) {install.packages("ggthemes")}
+library(ggthemes)
+
+if(!"scales"%in%rownames(installed.packages())) {install.packages("scales")}
+library(scales)
+
+if(!"reshape2"%in%rownames(installed.packages())) {install.packages("reshape2")}
+library(reshape2)
+
+if(!"gridExtra"%in%rownames(installed.packages())) {install.packages("gridExtra")}
+library(gridExtra)
+
+if(!"tibble"%in%rownames(installed.packages())) {install.packages("tibble")}
+library(tibble)
+
+if(!"lme4"%in%rownames(installed.packages())) {install.packages("lme4")}
+library(lme4)
+
+if(!"stargazer"%in%rownames(installed.packages())) {install.packages("stargazer")}
+library(stargazer)
+```
+
+\newpage 
+
+# Overview of Mixed Effects Models
+
+Mixed effect models are linear models that contain both fixed and random effects components. They are useful for data that is not independent and has some grouping structure such as from a hierarchical structure where groups are nested within higher level groups.
+
+Some common examples are:
+
+- Test scores of students from different classrooms within schools in a district
+
+- Patients who visited doctors in a state's hospitals
+
+- Repeated measurements of flower height for flowers grown with different fertilizers
+
+When we have this data with structured groups and/or repeated measurements, we can't apply general OLS as we saw last week.
+
+One option is to aggregate the data by averaging across individuals and estimate the pooling model though this loses data and individual level variation i.e. what we called the between model last week.
+
+Another option is to estimate separate models for each group, which results in many models with noisy estimates due to small samples. This is the varying coefficient fixed effects model we saw last week.
+
+Mixed effects models pool between these two extremes in an efficient manner based on the between and within group variation.
+
+These models can also be useful for understanding the difference between overall average effects across and within groups, helping us avoid Simpson's paradox.
+
+However, if we actually care about estimating the effect of particular groups, we should include those groups as fixed effects. If they are specified as random effects, the model will not explicitly estimate them as we will see below.
+
+# Mixed Effects Models Setup
+
+Mixed effects models take the following form:
+
+$$y=X\beta+ZU+\epsilon$$
+where $\beta$ is the set of fixed effect coefficients and $U$ is the estimated random effects.
+
+We assume $u\sim N(0,G)$ i.e. is normally distributed with a specified variance covariance matrix. We don't allow random effects to be correlated with each other so off diagonal terms in $G$ are zero. Also, remember that we assume random effects are uncorrelated with $X$ so $Cov(X,Z)=0$.
+
+Essentially, random effects models are assuming that the variance of an observation takes a specific form that can be decomposed into error due to specific groups (between group error) and idiosyncratic variance (within group error).
+
+## Example
+
+As a specific example that we will analyze later, let's assume we have a data set of wine bottles with the rating, price, winery, and country. We can imagine that we have multiple wines per winery and multiple wineries per country, resulting in a hierarchical grouping structure (country -> winery -> wine bottle).
+
+Rating is our outcome of interest and price is our coefficient of interest, so we treat it as a fixed effect. We will specify random effects for each winery (and ignore country for now) i.e. a random intercept for each winery.
+
+Suppose we have 80k wine bottle observations and 2k wineries in our data set. Then our  mixed effects model takes the following form and dimensions (Z is just a sparse matrix of 1's):
+
+$$y_{80,000x1}=X_{80,000x2}\beta_{2x1}+Z_{80,000x2,000} U_{2,000x1}+\epsilon_{80,000x1}$$
+We can see how $U$ has lots of parameters because we want to have random effects for each winery in this example (fixed effects models are similar, but we can remove the need to estimate them through demeaning/differencing in the within model).
+
+But with the assumption that random effects have zero mean, we only need to estimate the variance of the random effects which is the same for all wineries since they come from the same normal distribution. Effectively, we only have one parameter to find for the random effects.
+
+Under this formula $y$ is normally distributed:
+
+$$y\sim N(X\beta+ZU,\sigma^2_{epsilon}I)$$
+
+One way to see how this captures the group structure of data is to write the equation for each level of the data:
+
+$$L1: y_{bottle,winery}=\beta_{0,winery}+\beta_{Price,winery}Price_{bottle,winery}+\epsilon_{bottle,winery}$$
+$$L2: \beta_{0,winery}=\gamma_{0}+u_{0,winery}$$
+$$L2: \beta_{Price,winery}=\gamma_{Price}$$
+If we were to add a random slope where Price differs across wineries (Z in this case also includes the Price variable), then:
+
+$$L2: \beta_{Price,winery}=\gamma_{Price}+u_{Price,winery}$$
+
+# Case Study: Wine Data Set
+
+```{r}
+dat<-read.csv("data/wine_data.csv")
+
+head(dat)
+```
+
+## Exploratory Analysis
+
+Let's try to answer the following questions before building a model:
+
+(1) Plot a density curve of rating and price. Does price look normal? What type of data transformation would you suggest to make price less skewed? Produce a density curve of the transformed price variable as well.
+
+```{r}
+# Your code here
+```
+
+```{r}
+# Your code here
+```
+
+(2) How many wineries are in the data set and what is the distribution of bottles per winery?
+
+```{r}
+# Your code here
+```
+
+(3) How many countries are in the data set? And how many wineries are there per country?
+
+```{r}
+# Your code here
+```
+
+(4) Do certain countries seem to have higher ratings and/or higher prices? What does this suggest about including random intercepts for countries in our model?
+
+```{r}
+# Your code here
+```
+
+(5) Does the relationship between price and rating seem linear or nonlinear?
+
+```{r}
+# Your code here
+```
+
+(6) Do country and variety appear to impact the relationship between price and rating? Utilize both visualizations and statistical tests to answer this question. What does this suggest about including random slopes for price split by country in our model?
+
+```{r}
+# Your code here
+```
+
+```{r}
+# Your code here
+```
+
+```{r}
+# Your code here
+```
+
+## Building Mixed Effects Models
+
+Let's build several models to compare them. Generally, it is good practice to build lots of models and check that they all return similar results to see that your findings are robust to various specifications (model type, controls, etc.).
+
+(1) Fit a regular OLS of rating on your transformed price variable.
+
+```{r}
+#regular ols
+# lm.model <- # Your code here
+```
+
+(2) Fit a mixed effects model using `lmer` of rating on your transformed price variable with random intercepts for country using `(1|country)`.
+
+```{r}
+#mixed effects with country random intercepts
+# lmer.model1 <- # Your code here
+```
+
+(3) Fit a mixed effects model using `lmer` of rating on your transformed price variable with random intercepts for country and variety.
+
+```{r}
+#mixed effects with country, variety random intercepts
+# lmer.model2 <- # Your code here
+```
+
+(4) Fit a mixed effects model using `lmer` of rating on your transformed price variable with random intercepts for country, variety, and winery.
+
+```{r}
+#mixed effects with country, variety, winery random intercepts
+# lmer.model3 <- # Your code here
+```
+
+(5) Fit a mixed effects model using `lmer` of rating on your transformed price variable and a quadratic transformed price with random intercepts for country, variety, and winery.
+
+```{r}
+#mixed effects with country, variety, winery random intercepts; quadratic log price
+# lmer.model4 <- # Your code here
+```
+
+(6) Fit a mixed effects model using `lmer` of rating on your transformed price variable with random intercepts for country, variety, and winery. Add a random slope for your transformed price variable split by country.
+
+```{r}
+#mixed effects with country, variety, winery random intercepts and random slope by country
+# lmer.model5 <- # Your code here
+```
+
+(7) Deep dive into the summary results for the last model you fitted in step 6. Which level explains the most variance in the data? Which level explains the least?
+
+```{r}
+# summary(lmer.model5)
+```
+
+Note we can examine the random effects from the model using the code below. How does this connect to the random intercepts and random slopes in our model design?
+
+```{r}
+# lapply(ranef(lmer.model5),function(x) x %>% rownames_to_column() %>% slice(1:10))
+
+# lapply(coef(lmer.model5),function(x) x %>% rownames_to_column() %>% slice(1:10))
+```
+
+(8) We can use ANOVA to compare nested mixed effects models to each other. But comparing models to select the random effects is a bit weird.
+
+We should specify the random effects based on our understanding of the grouping structure in the data first to remove serial correlation instead of what leads to the best statistical fit.
+
+Run an ANOVA to compare the model with a linear price trend and a quadratic price trend. Which model is better?
+
+Note that R will refit the models using maximum likelihood before running ANOVA since the mixed effects models were originally fit with restricted maximum likelihood (REML). This is because maximum likelihood is required for likelihood ratio tests and ANOVA while REML is sometimes faster and converges better when fitting mixed effects models in the first place.
+
+```{r}
+#comparing nested fixed effects; good practice
+# Your code here
+```
+
+(9) Compare the results of all the models. What is the relationship between wine rating and price?
+
+```{r}
+# stargazer(lm.model,lmer.model1,lmer.model2,lmer.model3,lmer.model4,lmer.model5,
+#           keep="price",style="qje",type="text")
+```
+
+# Case Study: Illustration of Mixed Effects Models
+
+## Partial Pooling
+
+Now we illustrate how mixed effects models blend the completely separate model per group with the average across groups model.
+
+Notice in each case how the mixed effects regression line is between these two extremes. The exact mix is optimally chosen based on the fraction of variance in each extreme model as identified by the error decomposition in random effects.
+
+Fit an OLS model of rating on transformed price (complete pooling), a mixed model of rating on transformed price with random slopes split by country and random intercepts by country (no pooling), and a mixed model of rating on log price both as a fixed effect and with random slopes by country (partial pooling).
+
+```{r}
+# complete.pooling <- # Your code here
+
+# no.pooling <- # Your code here
+
+# partial.pooling <- # Your code here
+```
+
+Interpret the chart below. What do you notice about the different lines as the sample size per country increases? How does partial pooling compare to no pooling and complete pooling in the case of smaller samples and extreme values?
+
+```{r}
+# dat %>%
+#   mutate(complete.pooling=predict(complete.pooling,newdata=dat),
+#          partial.pooling=predict(partial.pooling,newdata=dat),
+#          no.pooling=predict(no.pooling,newdata=dat)) %>%
+#   filter(country%in%c("US","Hungary","Italy","Romania","Greece","Georgia","Israel")) %>%
+#   ggplot(aes(log_price,points,color=country)) +
+#   facet_wrap(~country) +
+#   geom_point(pch=19) +
+#   theme_economist_white(gray_bg=F) +
+#   theme(legend.title=element_blank(),legend.text=element_text(size=10)) +
+#   geom_line(aes(log_price,complete.pooling),color="gold1",lwd=1.2) +
+#   geom_line(aes(log_price,partial.pooling),color="orange2",lwd=1.2) +
+#   geom_line(aes(log_price,no.pooling),color="darkorange4",lwd=1.2) +
+#   scale_color_manual(breaks=c("Complete Pooling","Partial Pooling","No Pooling"),
+#                      values=c("Complete Pooling"="gold1",
+#                               "Partial Pooling"="orange2",
+#                               "No Pooling"="darkorange4",
+#                               "US"="cornflowerblue",
+#                               "Hungary"="cornflowerblue",
+#                               "Italy"="cornflowerblue",
+#                               "Romania"="cornflowerblue",
+#                               "Greece"="cornflowerblue",
+#                               "Georgia"="cornflowerblue",
+#                               "Israel"="cornflowerblue")) +
+#   xlab("Log Price") +
+#   ylab("Rating")
+```
+
+## Random Intercepts
+
+Here we show what random intercepts do to regression lines for each group in mixed effects models. What is the impact of random intercepts?
+
+```{r}
+# model_coefs<-coef(lmer.model1)$country %>% 
+#   rename(Intercept=`(Intercept)`,Slope=log_price) %>% 
+#   rownames_to_column("country")
+# 
+# tmp<-left_join(dat,model_coefs,by="country")
+# 
+# tmp %>%
+#   filter(country%in%c("US","Italy","Greece","Australia")) %>%
+#   ggplot(aes(log_price,points,color=country)) +
+#   geom_point(alpha=0.2,pch=19) +
+#   geom_abline(aes(intercept=Intercept,slope=Slope,colour=country),size=1.5) +
+#   theme_economist_white(gray_bg=F) +
+#   theme(legend.title=element_blank()) +
+#   scale_color_economist() +
+#   xlab("Log Price") +
+#   ylab("Rating")
+```
+
+## Random Slopes
+
+Here we show what random slopes do to regression lines for each group in mixed effects models. What is the impact of random slopes?
+
+```{r}
+# lmer.model.rs<-lmer(points~log_price+(0+log_price|country),dat=dat)
+# 
+# model_coefs<-coef(lmer.model.rs)$country %>% 
+#   rename(Intercept=`(Intercept)`,Slope=log_price) %>% 
+#   rownames_to_column("country")
+# 
+# tmp<-left_join(dat,model_coefs,by="country")
+# 
+# tmp %>%
+#   filter(country%in%c("US","Italy","Greece","Australia")) %>%
+#   ggplot(aes(log_price,points,color=country)) +
+#   geom_point(alpha=0.2,pch=19) +
+#   geom_abline(aes(intercept=Intercept,slope=Slope,colour=country),size=1.5) +
+#   theme_economist_white(gray_bg=F) +
+#   theme(legend.title=element_blank()) +
+#   scale_color_economist() +
+#   xlab("Log Price") +
+#   ylab("Rating")
+```
+
+## Random Intercepts and Random Slopes
+
+Here we show what random intercepts and random slopes do to regression lines for each group in mixed effects models. What is the impact of both random intercepts and random slopes? Compare to the above plots.
+
+```{r}
+# lmer.model.both<-lmer(points~log_price+(1+log_price|country),dat=dat)
+# 
+# model_coefs<-coef(lmer.model.both)$country %>% 
+#   rename(Intercept=`(Intercept)`,Slope=log_price) %>% 
+#   rownames_to_column("country")
+# 
+# tmp<-left_join(dat,model_coefs,by="country")
+# 
+# tmp %>%
+#   filter(country%in%c("US","Italy","Greece","Australia")) %>%
+#   ggplot(aes(log_price,points,color=country)) +
+#   geom_point(alpha=0.2,pch=19) +
+#   geom_abline(aes(intercept=Intercept,slope=Slope,colour=country),size=1.5) +
+#   theme_economist_white(gray_bg=F) +
+#   theme(legend.title=element_blank()) +
+#   scale_color_economist() +
+#   xlab("Log Price") +
+#   ylab("Rating")
+```
+
+## Checking Model Results
+
+We can check model results using residuals vs. fitted plots and also seeing how well the predicted values follow the actual values.
+
+Like regular regression plots we want our residuals to mostly look like random noise because in theory we have already removed any serial correlation through the random effects.
+
+Produce a residual vs. fitted plot for the mixed effects model `lmer.model4`. Is there a trend or do the residuals seem reasonably well behaved?
+
+```{r}
+# Your code here
+```
+
+Produce an actual vs. fitted plot for the mixed effects model `lmer.model4` and compare to the OLS model fitted values.
+
+```{r}
+# Your code here
+```
+
+# Nested Random Effects
+
+Sometimes we can have nested random effects. Above when we fit separate random effects for country and winery, we were telling R to assume that every winery could be in every country, but this does not reflect the true structure in the data. It can lead to incorrect hierarchical grouping and decomposition of the errors.
+
+To fix this we can create a combined id that reflects the unique key of the data and use this to inform R of the grouping structure.
+
+Generally speaking, it is ok to not worry about this because it doesn't change results that much unless you have a small data set, say less than 100 observations.
+
+```{r}
+# #we have wineries clustered within countries because the same winery is not present in more than one country
+# dat$winery_id<-paste(dat$country,dat$winery)
+# 
+# #naive / independent random effects
+# lmer.model3
+# 
+# #nested random effects; more accurate representation of the data
+# lmer(points~log_price+(1|country/winery_id)+(1|variety),dat=dat)
+```
+
+# Making Predictions
+
+## Estimating Prediction Variance
+
+One downside to using mixed effects models for prediction is that there is no closed form for the variance of predictions. We can use the bootstrap to get this although it can be computationally intensive.
+
+We will omit actually doing the bootstrap, but as a reminder we would run the following steps:
+
+1. Resample both y and X data with replacement to produce a bootstrap replicate dataset b*
+
+2. Fit the mixed effects model to b* and estimate predictions E(y*)
+
+3. Repeat (1)-(2) a large number B times (1000 or more)
+
+4. Estimate SE(y*) by taking the standard deviation of predictions across bootstrap replicates, or we can take the quantiles across replicates to get confidence intervals directly (using quantiles is more robust in the case of non symmetric data)
+
+## Wine Data Example
+
+Let's estimate the expected rating for the following new wines listed below. Note that we can make predictions for observations where random effects are missing or if there are new levels like new wineries or varieties, which makes mixed effects models particularly useful.
+
+This allows us to apply our model to brand new types of observations. What mixed effects models will do in these cases is use the population average i.e. set random effects for that variable (such as winery or varietal) to zero and then make the prediction.
+
+Fixed effects models do not allow this and require all data to not be missing and all levels to be present in the training data. This is another advantage of using mixed effects models with random effects for some variables.
+
+```{r}
+# new.data<-data.frame(
+#   "country"=c("US","France","Italy","Italy","Italy"),
+#   "log_price"=log(1+c(40,10,100,50,200)),
+#   "winery"=c("Benessere","Bouchard Père & Fils","Allegrini",NA,NA),
+#   "variety"=c("Sangiovese",NA,"Barbera","Lambrusco","Chianti")
+# )
+# 
+# #by default will throw an error if we have missing and/or new levels
+# predict(lmer.model4,newdata=new.data)
+# 
+# #specifying allow new levels let's us make predictions
+# predict(lmer.model4,newdata=new.data,allow.new.levels=T)
+```
+
+# Next Week
+
+- Last Session!
+
+- Lab 3 due

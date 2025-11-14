@@ -632,7 +632,7 @@ weather_weekly <- weather_weekly %>%
 plot_smoother(weather_weekly, "reg_temp_p4", "average_temperature", "Average Temperature (4th-Degree Polynomial)")
 ```
 
- 
+
 ```{r spline smoother}
 # I'll use df=5.
 
