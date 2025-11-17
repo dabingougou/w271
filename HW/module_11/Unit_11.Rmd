@@ -3,43 +3,94 @@ title: 'HW 11: US Traffic Fatalities: 1980 - 2004'
 subtitle: 'Part-1'
 output: 
   bookdown::pdf_document2: default
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r load packages, echo=FALSE, message=FALSE}
 library(tidyverse)
+#install.packages("ggrepel")
+library(ggrepel)
+library(broom)
+library(knitr)
 ```
 
-In this two-part project (HW-11 and HW-12), you are required to answer the following **causal** question:
+In this two-part project (HW-11 and HW-12), you are required to answer
+the following **causal** question:
 
-> **"Do changes in traffic laws affect traffic fatalities?"**  
+> **"Do changes in traffic laws affect traffic fatalities?"**
 
-To answer this question, please complete the tasks specified below using the data provided in `data/driving.Rdata`. This data includes 25 years of data that cover changes in various state drunk driving, seat belt, and speed limit laws. 
+To answer this question, please complete the tasks specified below using
+the data provided in `data/driving.Rdata`. This data includes 25 years
+of data that cover changes in various state drunk driving, seat belt,
+and speed limit laws.
 
-Specifically, this data set contains data for the 48 continental U.S. states from 1980 through 2004. Various driving laws are indicated in the data set, such as the alcohol level at which drivers are considered legally intoxicated. There are also indicators for “per se” laws—where licenses can be revoked without a trial—and seat belt laws. A few economics and demographic variables are also included. The description of the each of the variables in the dataset is also provided in the dataset. 
+Specifically, this data set contains data for the 48 continental U.S.
+states from 1980 through 2004. Various driving laws are indicated in the
+data set, such as the alcohol level at which drivers are considered
+legally intoxicated. There are also indicators for “per se” laws—where
+licenses can be revoked without a trial—and seat belt laws. A few
+economics and demographic variables are also included. The description
+of the each of the variables in the dataset is also provided in the
+dataset.
 
 ```{r load data, echo = TRUE}
 load(file="./data/driving.RData")
-tail(data)
+#tail(data)
 ## please comment these calls in your work 
-glimpse(data)
-desc
+# I uncommented these during my work and commented them out for cleaner submission.
+#glimpse(data)
+#desc
 ```
 
 \newpage
-# (30 points, total) Build and Describe the Data 
 
-1. (5 points) Load the data and produce useful features. Specifically: 
-    - Produce a new variable, called `speed_limit` that re-encodes the data that is in `sl55`, `sl65`, `sl70`, `sl75`, and `slnone`; 
-    - Produce a new variable, called `year_of_observation` that re-encodes the data that is in `d80`, `d81`, ... , `d04`. 
-    - Produce a new variable for each of the other variables that are one-hot encoded (i.e. `bac*` variable series). 
-    - Rename these variables to sensible names that are legible to a reader of your analysis. For example, the dependent variable as provided is called, `totfatrte`. Pick something more sensible, like, `total_fatalities_rate`. There are few enough of these variables to change, that you should change them for all the variables in the data. (You will thank yourself later.)
+# (30 points, total) Build and Describe the Data
 
-```{r}    
+1.  (5 points) Load the data and produce useful features. Specifically:
+    -   Produce a new variable, called `speed_limit` that re-encodes the
+        data that is in `sl55`, `sl65`, `sl70`, `sl75`, and `slnone`;
+    -   Produce a new variable, called `year_of_observation` that
+        re-encodes the data that is in `d80`, `d81`, ... , `d04`.
+    -   Produce a new variable for each of the other variables that are
+        one-hot encoded (i.e. `bac*` variable series).
+    -   Rename these variables to sensible names that are legible to a
+        reader of your analysis. For example, the dependent variable as
+        provided is called, `totfatrte`. Pick something more sensible,
+        like, `total_fatalities_rate`. There are few enough of these
+        variables to change, that you should change them for all the
+        variables in the data. (You will thank yourself later.)
 
-data %>%
+**Answer**
+
+This part creates new, more usable variables from the original one-hot
+encoded and confusingly named columns.
+
+speed_limit: This new variable aggregates the maximum speed limit from
+the sl55 to slnone series, prioritizing the loosest limit (slnone is set
+to NA_real\_ as it represents a non-numerical limit, followed by 75, 70,
+65, and 55 mph).
+
+year_of_observation: This variable converts the year indicators (d80
+through d04) into a single numerical year column (1980 through 2004),
+making time-series analysis straightforward.
+
+legal_bac_limit: This variable consolidates the Blood Alcohol Content
+limit indicators (bac08, bac10) into a single numerical column (0.08 or
+0.10).
+
+Variable Renaming: All original variable names are renamed to be more
+descriptive and legible (e.g., totfatrte becomes total_fatalities_rate,
+vehicmiles becomes vmt_billion). This significantly improves the clarity
+of subsequent analysis.
+
+```{r}
+
+df <- data %>%
   mutate(
     speed_limit = case_when(
-      # 1. Highest Priority: slnone (None speed limit ranks highest)
+      # 1. Highest Priority: slnone (None speed limit ranks highest -loosest)
       slnone > 0 ~ NA_real_, 
       
       # 2. Second Priority: sl75 (Highest numerical limit)
@@ -66,51 +117,521 @@ data %>%
       d90 == 1 ~ 1990, d91 == 1 ~ 1991, d92 == 1 ~ 1992, d93 == 1 ~ 1993, d94 == 1 ~ 1994,
       d95 == 1 ~ 1995, d96 == 1 ~ 1996, d97 == 1 ~ 1997, d98 == 1 ~ 1998, d99 == 1 ~ 1999,
       d00 == 1 ~ 2000, d01 == 1 ~ 2001, d02 == 1 ~ 2002, d03 == 1 ~ 2003, d04 == 1 ~ 2004
-    ))
+    )) %>%
+  # BAC (Blood Alcohol Content) variables 
+  # These are also one-hot encoded, indicating the state's legal BAC limit.
+  # bac08 = 1 means the limit is 0.08, bac10 = 1 means the limit is 0.10, etc.
+  mutate(
+    legal_bac_limit = case_when(
+      bac08 == 1 ~ 0.08,
+      bac10 == 1 ~ 0.10,
+      .default = NA_real_ # Should capture any unclassified BAC limits
+    )
+  ) %>%
+
+  rename(
+    total_fatalities_rate = totfatrte, # Dependent variable: Traffic fatalities per 100 thousand population
+    zero_tolerance_law = zerotol,
+    per_se_law = perse,
+    total_fatalities = totfat,
+    total_night_fatalities = nghtfat,
+    total_weekend_fatalities = wkndfat,
+    total_fatalities_100m_miles = totfatpvm,
+    total_night_fatalities_100m_miles = nghtfatpvm,
+    total_weekend_fatalities_100m_miles = wkndfatpvm,
+    state_population = statepop, 
+    total_night_fatalities_rate = nghtfatrte,
+    total_weekend_fatalities_rate = wkndfatrte,
+    percent_pop_12_24 = perc14_24,
+    vmt_billion = vehicmiles,
+    vmt_per_capita = vehicmilespc
+  ) %>%
+  mutate(
+    state = factor(state),
+    year = as.integer(year_of_observation)
+  )
+
+
 ```
 
 \newpage
-2. (5 points) Provide a description of the basic structure of the dataset. What is this data? How, where, and when is it collected? Is the data generated through a survey or some other method? Is the data that is presented a sample from the population, or is it a *census* that represents the entire population? Minimally, this should include:
-    - How is the our dependent variable of interest `total_fatalities_rate` defined? 
+2
+
+. (5 points) Provide a description of the basic structure of the
+dataset. What is this data? How, where, and when is it collected? Is the
+data generated through a survey or some other method? Is the data that
+is presented a sample from the population, or is it a *census* that
+represents the entire population? Minimally, this should include: - How
+is the our dependent variable of interest `total_fatalities_rate`
+defined?
+
+**Answer**
+
+**Structure** The data has `r dim(df)[1]` rows, and including
+transformed variables, `r dim(df)[2]` columns. Details are explained
+below.
+
+**About the data?**
+
+A state-year panel for the lower 48 states covering 1980–2004. It
+combines traffic fatalities outcomes, traffic laws (speed limits, BAC
+thresholds, seat-belt enforcement, per se and zero-tolerance laws), and
+economic/demographic controls (population, vehicle miles traveled, age
+shares, etc.).
+
+**How, where, and when is it collected?**
+
+According to my online searches,, the data is derived from
+administrative records (such as state police reports compiled into
+national systems such as FARS) at the state–year level.
+
+Vehicle miles traveled (VMT) typically come from states’ roadway
+reporting (e.g., HPMS) aggregated to state–year.
+
+Population and demographics (e.g., ages 14–24 share) are from
+state-level population estimates (Census/BLS style series), matched by
+year.
+
+Law indicators (speed-limit regimes, BAC thresholds, seat-belt
+enforcement type, per se/zero-tolerance) are coded from state statutes
+and official policy change dates, then converted into year dummies.
+
+Survey vs. administrative? This is not a sample survey of individuals.
+It is a compiled administrative dataset built from population-level
+sources (fatality registries, statutory law changes, population/VMT
+aggregates). So at the state-year level, it’s effectively a census of
+the units (states) for the years included.
+
+Population vs. sample For the scope defined (48 states × 1980–2004), the
+dataset intends to cover the full population of state-years (subject to
+occasional missing values). It’s not a sampled subset.
+
+Definition of the dependent variable total_fatalities_rate: $$
+total\_fatalities\_rate = 
+  \frac{100,000 \cdot total\_fatalities}{population}
+$$
 
 \newpage
-3. (20 points) Conduct a very thorough EDA, which should include both graphical and tabular techniques, on the dataset, including both the dependent variable `total_fatalities_rate` and the potential explanatory variables. Minimally, this should include: 
-    - How is the our dependent variable of interest `total_fatalities_rate` defined? 
-    - What is the average of `total_fatalities_rate` in each of the years in the time period covered in this dataset? 
+3
 
-As with every EDA this semester, the goal of this EDA is not to document your own process of discovery -- save that for an exploration notebook -- but instead it is to bring a reader that is new to the data to a full understanding of the important features of your data as quickly as possible. In order to do this, your EDA should include a detailed, orderly narrative description of what you want your reader to know. Do not include any output -- tables, plots, or statistics -- that you do not intend to write about.
+. (20 points) Conduct a very thorough EDA, which should include both
+graphical and tabular techniques, on the dataset, including both the
+dependent variable `total_fatalities_rate` and the potential explanatory
+variables. Minimally, this should include: - How is the our dependent
+variable of interest `total_fatalities_rate` defined? - What is the
+average of `total_fatalities_rate` in each of the years in the time
+period covered in this dataset?
 
-\newepage
+As with every EDA this semester, the goal of this EDA is not to document
+your own process of discovery -- save that for an exploration notebook
+-- but instead it is to bring a reader that is new to the data to a full
+understanding of the important features of your data as quickly as
+possible. In order to do this, your EDA should include a detailed,
+orderly narrative description of what you want your reader to know. Do
+not include any output -- tables, plots, or statistics -- that you do
+not intend to write about.
+
+**Answer**
+
+**Distribution of pooled (all states all years) of
+total_fatalities_rate**
+
+```{r}
+summary(df$total_fatalities_rate)
+
+quantiles = quantile(df$total_fatalities_rate,
+         probs = c(0.05, 0.25, 0.5, 0.75, 0.95))
+
+df %>%
+  ggplot(aes(x = total_fatalities_rate)) + 
+  geom_histogram(binwidth = 1.5) + 
+  # Add vertical lines for the quantiles
+  geom_vline(xintercept = quantiles["25%"], 
+             linetype = "dashed", color = "red", linewidth = 1) +
+  geom_vline(xintercept = quantiles["50%"], 
+             linetype = "solid", color = "black", linewidth = 1.2) + # Median
+  geom_vline(xintercept = quantiles["75%"], 
+             linetype = "dashed", color = "red", linewidth = 1) +
+  # Add labels for clarity
+  annotate("text", x = quantiles["25%"], y = 150, label = paste0("Q1: ", round(quantiles["25%"], 2)), 
+           hjust = -0.1, color = "red", angle = 90) +
+  annotate("text", x = quantiles["50%"], y = 150, label = paste0("Median: ", round(quantiles["50%"], 2)), 
+           hjust = -0.1, color = "black", angle = 90) +
+  annotate("text", x = quantiles["75%"], y = 150, label = paste0("Q3: ", round(quantiles["75%"], 2)), 
+           hjust = -0.1, color = "red", angle = 90) +
+  
+  labs(
+    title = 'Distribution of Total Fatalities Rate with Quantiles',
+    x = 'Total Fatalities Rate (per 100k Population)',
+    y = 'Count of State-Years'
+  ) +
+  theme_minimal()
+```
+
+**Trend of state population weighted average total fatalities rates**
+
+```{r}
+# 1. Calculate the population-weighted average rate per year
+weighted_avg_rate_by_year <- df %>%
+  # Group the data by the year of observation
+  group_by(year_of_observation) %>%
+  # Summarize to get the total fatalities and total population for that year
+  summarise(
+    total_fatalities_in_year = sum(total_fatalities, na.rm = TRUE),
+    total_population_in_year = sum(state_population, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  # Calculate the population-weighted average rate
+  mutate(
+    weighted_avg_rate = (total_fatalities_in_year / total_population_in_year) * 100000
+  )
+
+# 2. Plot the time trend
+weighted_avg_rate_by_year %>%
+  ggplot(aes(x = year_of_observation, y = weighted_avg_rate)) +
+  geom_line(color = "#E41A1C", linewidth = 1.2) +
+  geom_point(color = "#E41A1C", size = 2) +
+  # Add a smoother to highlight the overall trend
+  geom_smooth(method = "lm", se = FALSE, color = "gray50", linetype = "dashed", linewidth = 0.8) +
+  
+  labs(
+    title = 'Time Trend of Population-Weighted Average Fatalities Rate (1980-2004)',
+    subtitle = 'Rate is defined per 100,000 residents',
+    x = 'Year of Observation',
+    y = 'Population-Weighted Fatalities Rate'
+  ) +
+  scale_x_continuous(breaks = seq(1980, 2004, by = 4)) +
+  theme_minimal()
+```
+
+**Variable relations**
+
+```{r}
+
+df %>%
+  ggplot(
+    aes(
+      x = year_of_observation, 
+      y = total_fatalities_rate, 
+      group = state, 
+      color = state)) +
+  # 1. Add the individual time-series lines (the "spaghetti")
+  geom_line(alpha = 0.5, linewidth = 0.6) +
+  # 2. Add points for individual state-year observations
+  geom_point(alpha = 0.7, size = 1.5) +
+  # Optional: Add the overall population-weighted average trend line (in black)
+  # You would need the 'weighted_avg_rate_by_year' object calculated previously.
+  # geom_line(data = weighted_avg_rate_by_year, aes(y = weighted_avg_rate), 
+  #           color = "black", linewidth = 1.5, inherit.aes = FALSE) +
+  # 3. Add Labels using the filtered data
+  geom_text_repel(
+    aes(label = state, color = state),
+    size = 3,          # Smaller text size
+    segment.colour = 'gray70', # Light line connecting label to point
+    segment.size = 0.2,
+    direction = "y",   # Primarily repel labels in the y direction
+    max.overlaps = 50  # Allow for more labels to be placed
+  ) +
+  
+  # 3. Customize the plot aesthetics
+  labs(
+    title = "Traffic Fatalities Rate Over Time by State (1980-2004)",
+    subtitle = "Each line represents one state.",
+    x = "Year of Observation",
+    y = "Total Fatalities Rate (per 100k Pop.)",
+    color = "State"
+  ) +
+  scale_x_continuous(breaks = seq(1980, 2004, by = 5)) +
+  # Use a perceptually uniform color palette for many lines
+  scale_color_viridis_d(guide = "none") + 
+  theme_minimal()
+```
+
+```{r}
+df %>% 
+  ggplot(aes(unem, total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE)
+
+df %>% 
+  ggplot(aes(speed_limit, total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE)
+
+
+
+```
+
+**Between relationships**
+
+```{r}
+state_means <- df %>%
+  group_by(state) %>%
+  summarize(across(c(total_fatalities_rate, unem), mean, na.rm = TRUE),
+            speed_limit_mode = names(sort(table(speed_limit), TRUE))[1],
+            seatbelt_share = mean(seatbelt==1, na.rm=TRUE))
+
+cor_between <- cor(state_means$total_fatalities_rate, state_means$unem, use="pairwise.complete.obs")
+cor_between
+
+
+```
+
+```{r}
+# 1. Calculate the time-averaged (Between) values for each state
+state_means <- df %>%
+  group_by(state) %>%
+  summarize(
+    # Calculate the Mean for the dependent variable and all continuous/binary laws
+    across(
+      .cols = c(total_fatalities_rate, unem, seatbelt, zero_tolerance_law, 
+                per_se_law, vmt_per_capita, legal_bac_limit, percent_pop_12_24), 
+      .fns = ~ mean(., na.rm = TRUE),
+      .names = "{.col}_avg"
+    ),
+    # Calculate the Mode (most frequent) for speed_limit
+    speed_limit_mode = names(sort(table(speed_limit), decreasing = TRUE))[1],
+    .groups = 'drop'
+  ) %>%
+  # Convert speed_limit_mode back to numeric for correlation
+  mutate(speed_limit_mode = as.numeric(speed_limit_mode))
+
+# 2. Extract the columns needed for correlation
+# Dependent variable (y)
+y_avg <- state_means$total_fatalities_rate_avg 
+
+# Explanatory variables (X's)
+x_vars_avg <- state_means %>%
+  select(unem_avg, speed_limit_mode, seatbelt_avg, zero_tolerance_law_avg, 
+         per_se_law_avg, vmt_per_capita_avg, legal_bac_limit_avg, percent_pop_12_24_avg)
+
+# 3. Calculate the Between Correlation
+# The 'cor' function handles multiple columns against a single vector.
+cor_matrix <- cor(y_avg, x_vars_avg, use = "pairwise.complete.obs")
+
+# 4. Display the results in a tidy table
+results_table <- cor_matrix %>%
+  # Convert matrix row to a data frame
+  as.data.frame() %>%
+  # Transpose the data frame so variables are rows
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Between_Correlation") %>%
+  
+  # Clean up the variable names for the final display
+  mutate(
+    Variable = gsub("_avg", " (Avg)", Variable),
+    Variable = gsub("_mode", " (Mode)", Variable)
+  ) %>%
+  # Convert to a tibble for nice printing
+  as_tibble()
+
+print(results_table)
+
+```
+
+**Within relationships**
+
+```{r}
+# Residualize via two-way FE
+residize <- function(y) {
+  lm(y ~ factor(state) + factor(year), data = df)$residuals
+}
+
+df_within <- df %>%
+  mutate(
+    y_w  = residize(total_fatalities_rate),
+    unem_w = residize(unem),
+    seatbelt_w = residize(seatbelt)
+    # For an ordered categorical speed limit, use numeric “level” for exploration:
+  )
+
+
+cor_within_unem   <- cor(df_within$y_w, df_within$unem_w, use="pairwise.complete.obs")
+cor_within_seat   <- cor(df_within$y_w, df_within$seatbelt_w, use="pairwise.complete.obs")
+
+c(cor_within_unem=cor_within_unem,
+  cor_within_seat=cor_within_seat
+  )
+
+```
+
+\newpage
+
 # (15 points) Preliminary Model
 
-Estimate a linear regression model of *totfatrte* on a set of dummy variables for the years 1981 through 2004 and interpret what you observe. In this section, you should address the following tasks: 
+Estimate a linear regression model of *totfatrte* on a set of dummy
+variables for the years 1981 through 2004 and interpret what you
+observe. In this section, you should address the following tasks:
 
-- Why is fitting a linear model a sensible starting place? 
-- What does this model explain, and what do you find in this model? 
-- Did driving become safer over this period? Please provide a detailed explanation.
-- What, if any, are the limitation of this model. In answering this, please consider **at least**: 
-    - Are the parameter estimates reliable, unbiased estimates of the truth? Or, are they biased due to the way that the data is structured?
-    - Are the uncertainty estimate reliable, unbiased estimates of sampling based variability? Or, are they biased due to the way that the data is structured? 
+-   Why is fitting a linear model a sensible starting place?
+-   What does this model explain, and what do you find in this model?
+-   Did driving become safer over this period? Please provide a detailed
+    explanation.
+-   What, if any, are the limitation of this model. In answering this,
+    please consider **at least**:
+    -   Are the parameter estimates reliable, unbiased estimates of the
+        truth? Or, are they biased due to the way that the data is
+        structured?
+    -   Are the uncertainty estimate reliable, unbiased estimates of
+        sampling based variability? Or, are they biased due to the way
+        that the data is structured?
 
-# (15 points) Expanded Model 
+**Answer**
 
-Expand the **Preliminary Model** by adding variables related to the following concepts: 
+**Why is fitting a linear model a sensible starting place?**
 
-- Blood alcohol levels 
-- Per se laws
-- Primary seat belt laws (Note that if a law was enacted sometime within a year the fraction of the year is recorded in place of the zero-one indicator.)
-- Secondary seat belt laws 
-- Speed limits faster than 70 
-- Graduated drivers licenses 
-- Percent of the population between 14 and 24 years old
-- Unemployment rate
-- Vehicle miles driven per capita. 
+A linear regression model is a sensible starting point for several
+reasons:
 
-If it is appropriate, include transformations of these variables. Please carefully explain carefully your rationale, which should be based on your EDA, behind any transformation you made. If no transformation is made, explain why transformation is not needed. 
+-   Simplicity and Interpretability. It provides a straightforward way
+    to quantify the average relationship between **time and the
+    outcome**. The coefficient $\delta_t$ indicates the average change
+    in the fatality rate from the baseline year (1980) to year $t$.
 
-- How are the blood alcohol variables defined? Interpret the coefficients that you estimate for this concept. 
-- Do *per se laws* have a negative effect on the fatality rate? 
-- Does having a primary seat belt law? 
+-   Establishing a baseline trend: This model directly answers whether
+    the fatality rate has trended up or down.
 
+-   The later models (Two-Way Fixed Effects, which is a variation of
+    OLS) can build upon the OLS framework.
 
- 
+**What does this model explain, and what do you find?**
+
+The model, which uses $R^2$ as its measure of fit, explains the portion
+of the overall variation in the total_fatalities_rate that can be
+attributed solely to the year of observation. Essentially, it captures
+the common time trend shared across all 48 states.
+
+I observe that all $\delta_t$ coefficients are negative and
+statistically significant. Since $\delta_t$ measures the difference
+between year $t$ and 1980, the negative value indicates that the average
+traffic fatality rate in year $t$ was lower than 1980. The magnitude of
+$|\delta_t|$ should increase over time, meaning the difference between
+year $t$ and 1980 grows larger as $t$ approaches 2004.
+
+**Did driving become safer over this period?**
+
+Yes, driving became safer over the period. The negative and increasing
+magnitude of the year dummy coefficients ($\delta_t$) is evidence that
+the average traffic fatality rate decreased from 1980 to 2004.
+
+This finding confirms the graph from my EDA (the decreasing trend in the
+population-weighted average rate). For example, $\delta_{2004} = -8.8$
+means that, on average, the fatality rate in 2004 was $8.8$ fatalities
+per 100,000 population lower than the rate in 1980. The key finding is
+that a secular trend exists across the lower 48.
+
+**Model Limitations**
+
+The main limitations of this simple model is that it cannot account for
+the panel (between obs units) structure of the data and the omission of
+other key variables.
+
+**Are the parameter estimates reliable, unbiased estimates of the
+truth?** No, the parameter estimates ($\delta_t$) are likely biased.
+Bias from Omitted Variable Bias (OVB): The model omits every factor that
+varies across states but not over time.
+
+This $\delta_t$ is capturing the aggregate trend, but the true effect is
+likely confounded by these unobserved state-specific differences. For
+example, a state with historically better roads might have a lower
+baseline rate, but this simple model cannot separate the effect of time
+from the effect of state. (To address this, I would use a **within
+estimator** or first-difference), which includes state fixed effects to
+control for all time-invariant, unobserved state characteristics. Of
+couese FE assumptions need to be met.
+
+**Are the uncertainty estimates reliable, unbiased estimates of sampling
+based variability?**
+
+No, the uncertainty estimates (Standard Errors) are likely biased
+(understated).
+
+Bias from Dependence/Serial Correlation: OLS standard errors assume that
+the errors ($\epsilon_{it}$) are independent. In panel data, the errors
+for the same state across different years are likely to be correlated
+(serial cor).
+
+Things that make California a higher/lower risk driving environment tend
+to persist. This correlation means the model has fewer independent
+pieces of information than it assumes it does, leading to standard
+errors that are too small and $p$-values that are too low.
+
+```{r Year_Dummy_Model_Chunk}
+model_prelim <- lm(data = df,
+   total_fatalities_rate ~ factor(year))
+
+#summary(model_prelim)
+
+year_effects <- tidy(model_prelim) %>%
+  filter(grepl("factor\\(year\\)", term)) %>%
+  # Calculate the mean rate for each year (Coefficient + Intercept)
+  mutate(
+    year = as.integer(gsub("factor\\(year\\)", "", term)),
+    baseline_rate_1980 = model_prelim$coefficients["(Intercept)"],
+    mean_rate = estimate + baseline_rate_1980
+  ) %>%
+  select(year, delta_t = estimate, p.value)
+
+# year_effects
+
+kable(
+  year_effects,
+  digits = 2,
+  caption = "Estimated Year Effects on Fatality Rate (vs 1980)"
+)
+```
+
+\newpage
+
+# (15 points) Expanded Model
+
+Expand the **Preliminary Model** by adding variables related to the
+following concepts:
+
+-   Blood alcohol levels
+-   Per se laws
+-   Primary seat belt laws (Note that if a law was enacted sometime
+    within a year the fraction of the year is recorded in place of the
+    zero-one indicator.)
+-   Secondary seat belt laws
+-   Speed limits faster than 70
+-   Graduated drivers licenses
+-   Percent of the population between 14 and 24 years old
+-   Unemployment rate
+-   Vehicle miles driven per capita.
+
+If it is appropriate, include transformations of these variables. Please
+carefully explain carefully your rationale, which should be based on
+your EDA, behind any transformation you made. If no transformation is
+made, explain why transformation is not needed.
+
+-   How are the blood alcohol variables defined? Interpret the
+    coefficients that you estimate for this concept.
+-   Do *per se laws* have a negative effect on the fatality rate?
+-   Does having a primary seat belt law?
+
+**Answer**
+
+```{r}
+
+model_expanded <-
+  lm(data = df,
+     total_fatalities_rate ~ factor(year) + 
+       legal_bac_limit + 
+       per_se_law + 
+       sbprim + 
+       sbsecon + 
+       sl70plus + 
+       gdl + 
+       percent_pop_12_24 + 
+       unem + 
+       vmt_per_capita)
+  
+# Display the model results in a tidy table
+expanded_results <- tidy(model_expanded)
+
+kable(
+  expanded_results %>% filter(!grepl("factor\\(year\\)", term)),
+  digits = 3,
+  caption = "Expanded Model Results (Year Fixed Effects Only)"
+)
+```
