@@ -62,29 +62,29 @@ load(file="./data/driving.RData")
         variables to change, that you should change them for all the
         variables in the data. (You will thank yourself later.)
 
-**Answer**
+### **Answer to and comments on 1.1**
 
-This part creates new, more usable variables from the original one-hot
-encoded and confusingly named columns.
+This part creates new, transformed variables from the original (including one-hot
+encoded and cryptically named columns.
 
-speed_limit: This new variable aggregates the maximum speed limit from
+speed_limit: The new variable aggregates the maximum speed limit from
 the sl55 to slnone series, prioritizing the loosest limit (slnone is set
 to NA_real\_ as it represents a non-numerical limit, followed by 75, 70,
 65, and 55 mph).
 
-year_of_observation: This variable converts the year indicators (d80
+year_of_observation: The variable converts the year indicators (d80
 through d04) into a single numerical year column (1980 through 2004),
 making time-series analysis straightforward.
 
-legal_bac_limit: This variable consolidates the Blood Alcohol Content
+legal_bac_limit: The variable consolidates the Blood Alcohol Content
 limit indicators (bac08, bac10) into a single numerical column (0.08 or
 0.10).
 
-Variable Renaming: All original variable names are renamed to be more
+Variable Renaming: Almost all original variable names are renamed to be more
 descriptive and legible (e.g., totfatrte becomes total_fatalities_rate,
-vehicmiles becomes vmt_billion). This significantly improves the clarity
-of subsequent analysis.
+vehicmiles becomes vmt_billion). 
 
+### **Code for Problem 1**
 ```{r}
 
 df <- data %>%
@@ -125,7 +125,7 @@ df <- data %>%
     legal_bac_limit = case_when(
       bac08 == 1 ~ 0.08,
       bac10 == 1 ~ 0.10,
-      .default = NA_real_ # Should capture any unclassified BAC limits
+      .default = NA_real_ # capture any unclassified BAC limits
     )
   ) %>%
 
@@ -165,9 +165,11 @@ represents the entire population? Minimally, this should include: - How
 is the our dependent variable of interest `total_fatalities_rate`
 defined?
 
-**Answer**
+### **Answer to 1.2**
 
-**Structure** The data has `r dim(df)[1]` rows, and including
+**Structure** 
+
+The data has `r dim(df)[1]` rows, and including
 transformed variables, `r dim(df)[2]` columns. Details are explained
 below.
 
@@ -231,7 +233,12 @@ orderly narrative description of what you want your reader to know. Do
 not include any output -- tables, plots, or statistics -- that you do
 not intend to write about.
 
-**Answer**
+### **Answer to 1.3**
+
+\newpage
+First look:
+I first plot the histogram of the total fatalities rate. This plot pools all states and years and is meant to be 
+a quick first look and sanity check only.
 
 **Distribution of pooled (all states all years) of
 total_fatalities_rate**
@@ -261,14 +268,22 @@ df %>%
            hjust = -0.1, color = "red", angle = 90) +
   
   labs(
-    title = 'Distribution of Total Fatalities Rate with Quantiles',
+    title = 'Distribution of Total Fatalities Rate with Quantiles (0.25, 0.5, 0.75)',
     x = 'Total Fatalities Rate (per 100k Population)',
     y = 'Count of State-Years'
   ) +
   theme_minimal()
 ```
 
+
+\newpage
+
 **Trend of state population weighted average total fatalities rates**
+
+As one of the first steps, this is a overall look of time trend not accounting for 
+state effects. The red line is the population-weighted total fatalities rate over time. The 
+key conclusion is that average fatalities steadily declined over the period. More on this in the regression models.
+
 
 ```{r}
 # 1. Calculate the population-weighted average rate per year
@@ -304,7 +319,11 @@ weighted_avg_rate_by_year %>%
   theme_minimal()
 ```
 
+\newpage
 **Variable relations**
+
+This very busy plot shows time trends by state. I would not include this in any published material but think it is 
+a useful first look/check before proceeding.
 
 ```{r}
 
@@ -319,10 +338,7 @@ df %>%
   geom_line(alpha = 0.5, linewidth = 0.6) +
   # 2. Add points for individual state-year observations
   geom_point(alpha = 0.7, size = 1.5) +
-  # Optional: Add the overall population-weighted average trend line (in black)
-  # You would need the 'weighted_avg_rate_by_year' object calculated previously.
-  # geom_line(data = weighted_avg_rate_by_year, aes(y = weighted_avg_rate), 
-  #           color = "black", linewidth = 1.5, inherit.aes = FALSE) +
+  
   # 3. Add Labels using the filtered data
   geom_text_repel(
     aes(label = state, color = state),
@@ -346,23 +362,82 @@ df %>%
   scale_color_viridis_d(guide = "none") + 
   theme_minimal()
 ```
+\newpage
+
+**Variable relations**
+This part of 1.3 answer looks at variable relations, both in visuals and in tables.
+
+Related comments are deferred to later in part 3 where I compare regression results (on relations between variables)
+and the results shown in this section. Some numerical variables were casted as factor intentionally.
 
 ```{r}
 df %>% 
   ggplot(aes(unem, total_fatalities_rate)) +
   geom_point(alpha = 0.2) +
-  geom_smooth(method = "loess", se = FALSE)
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(title = "First look of unemployment rate and fatalities",
+       x = "Unemployment rate")
 
 df %>% 
   ggplot(aes(speed_limit, total_fatalities_rate)) +
   geom_point(alpha = 0.2) +
-  geom_smooth(method = "loess", se = FALSE)
+  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "First look of speed limit and fatalities",
+       x = "Speed limit")
 
+df %>% 
+  ggplot(aes(as.factor(sl70plus), total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+#  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "Another look of speed limit and fatalities",
+       x = "Speed limit (below and above 70)")
+
+df %>% 
+  ggplot(aes(as.factor(legal_bac_limit), total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+#  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "First look of BAC and fatalities",
+       x = "Blood alcohol content")
+
+df %>% 
+  ggplot(aes(as.factor(gdl), total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+#  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "First look of GDL and fatalities",
+       x = "Graduated driver license")
+
+df %>% 
+  ggplot(aes(percent_pop_12_24, total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+#  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "First look of youth pop. share and fatalities",
+       x = "% of pop. share between 12-24")
+
+
+df %>% 
+  ggplot(aes(vmt_per_capita, total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+#  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "First look of VMT per capita and fatalities",
+       x = "VMT per capita")
+
+df %>% 
+  ggplot(aes(per_se_law, total_fatalities_rate)) +
+  geom_point(alpha = 0.2) +
+#  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "First look of per se law and fatalities",
+       x = "per se law")
 
 
 ```
 
+\newpage
 **Between relationships**
+
+Similarly, in this part I tabulate some of the correlations and defer the comment to the 
+regression model sections, and compare the regression (where year of observation and some covariates are accounted for)
+parameters with the correlation numbers in this current part. Not all the signs of the correlation are as expected and in regression analysis the signs show up correct (as expected).
+
 
 ```{r}
 state_means <- df %>%
@@ -555,6 +630,10 @@ to persist. This correlation means the model has fewer independent
 pieces of information than it assumes it does, leading to standard
 errors that are too small and $p$-values that are too low.
 
+The model equation is: 
+
+$$\text{y}_{it} = \alpha + \sum_{t=1981}^{2004} \delta_t \cdot \mathbf{I}(t) + \epsilon_{it}$$
+
 ```{r Year_Dummy_Model_Chunk}
 model_prelim <- lm(data = df,
    total_fatalities_rate ~ factor(year))
@@ -573,11 +652,11 @@ year_effects <- tidy(model_prelim) %>%
 
 # year_effects
 
-kable(
-  year_effects,
-  digits = 2,
-  caption = "Estimated Year Effects on Fatality Rate (vs 1980)"
-)
+#kable(
+#  year_effects,
+#  digits = 2,
+#  caption = "Estimated Year Effects on Fatality Rate (vs 1980)"
+#)
 ```
 
 \newpage
@@ -610,6 +689,45 @@ made, explain why transformation is not needed.
 -   Does having a primary seat belt law?
 
 **Answer**
+
+So as asked, I estimated the model below (seems that no FE estimators were asked in this homework). Regression results are shown in the table at the end of this document.
+
+$$\text{y}_{it} = \alpha + \sum_t \delta_t \mathbf{I}(t) + \beta_1 \cdot \text{LegalBAC}_{it} + \beta_2 \cdot \text{perce}_{it} + \beta_3 \cdot \text{sbprim}_{it} + \beta_4 \cdot \text{sbsecon}_{it} + \beta_5 \cdot speed\_limit\_gt\_70_{it}  + \beta_6 \cdot gdl_{it} + \beta_7 \cdot unemployment_{it}
+  + \beta_8 \cdot youth\_percent_{it}
+  + \beta_9 \cdot VMTperCapita_{it}
+  \epsilon_{it}$$
+  
+The goal is to assess whether the estimated regression coefficients ($\beta$) for the policy variables align with expectation, intuition, and the raw correlations in Part 1.3. Discrepancies show the importance of controlling for year and other controls.
+
+**Interesting observations**
+
+**Blood Alcohol Variables (legal_bac_limit)**
+
+  - Between Correlation ($\mathbf{+0.081}$): This weak positive correlation suggests that states that, on average, maintained looser BAC limits (closer to 0.10) had a slightly higher average fatality rate over the period. 
+  - Regression Coefficient ($\mathbf{+56.654}$): The regression coefficient is positive and significant ($p=0.001$).
+  - Comparison: The strong significance in the regression, despite the weak raw correlation, shows that once we control for the common year other controls, the effect of the BAC limit becomes much clearer. The model attributes a highly significant increase in fatalities to higher BAC limits.
+
+**Per se laws**
+
+  - Between Correlation ($\mathbf{+0.165}$): The correlation is positive, suggesting states with per se laws (more restrictive) had a higher average fatality rate. This is counter-intuitive and likely driven by unobserved characteristics.
+  - Regression Coefficient ($\mathbf{-0.343}$): The coefficient is negative (safer), aligning with economic theory on deterrence, but it is not statistically significant ($p=0.229$).
+  - Comparison: The coefficient flips the sign from the raw between correlation (Positive $\to$ Negative). This suggests that the raw correlation was likely spurious. The regression controls for the common time trend, but its insignificance indicates the effect may still be confounded by unobserved state characteristics that vary over time or that the law's effect is small.
+  
+  
+**Primary seat belt law**
+
+ - Within Correlation ($\mathbf{+0.048}$ for generic seatbelt): The correlation on the de-meaned data is close to zero and slightly positive. This relationship suggests that year-to-year changes in seat belt law enforcement are not strongly related to year-to-year changes in fatalities.
+ - Regression Coefficient ($\mathbf{-0.668}$): The coefficient for the primary law (sbprim) is negative (safer) and larger in magnitude than the secondary law, suggesting it reduces the fatality rate, but it is not statistically significant ($p=0.142$).
+ - Comparison: The negative sign in the regression is the expected finding (primary law $\implies$ fewer deaths). The lack of significance, despite controlling for the year trend, suggests that the effect of primary seatbelt laws is either weak or is still being biased by unobserved factors that vary over time within a state (like the intensity of enforcement or local changes in road quality).  
+  
+  
+**Takeaways**
+
+**Key points:**
+
+Confounding. The difference between the raw correlations and the regression coefficients (especially for per_se_law) highlights that even a simple model is essential to remove the confounding effects of the common time trend (factor(year)). 
+
+Unreliability. Despite including year fixed effects, the model is still a pooled OLS, and many limitations remain: Bias in $\beta$ estimates (e.g., due to OVB). We also have unreliable standard errors. They are likely too small because of serial correlation. 
 
 ```{r}
 
