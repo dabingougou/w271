@@ -1,0 +1,370 @@
+---
+title: 'HW-12: US Traffic Fatalities: 1980 - 2004'
+subtitle: 'Part-2'
+output: 
+  bookdown::pdf_document2: default
+---
+
+```{r load packages, echo=FALSE, message=FALSE}
+library(tidyverse)
+#install.packages("ggrepel")
+library(ggrepel)
+library(broom)
+library(knitr)
+
+library(plm)
+library(lmtest)
+
+install.packages("fredr")
+library(fredr)
+```
+
+In this second part (HW-12), you are using fixed effects and random effects models to capture potential heterogeneity among states and answer the following question:
+
+> **"Do changes in traffic laws affect traffic fatalities?"**  
+
+To answer this question, please complete the tasks specified below using the data provided in `data/driving.Rdata`. This data includes 25 years of data that cover changes in various state drunk driving, seat belt, and speed limit laws. 
+
+```{r load data, echo=TRUE}
+load(file="./data/driving.RData")
+
+## please comment these calls in your work 
+```
+\newpage
+# (15 points) State-Level Fixed Effects 
+
+**Answer**
+
+First create the same dataframe as did last time for later steps.
+
+```{r}
+df <- data %>%
+  mutate(
+    speed_limit = case_when(
+      # 1. Highest Priority: slnone (None speed limit ranks highest -loosest)
+      slnone > 0 ~ NA_real_, 
+      
+      # 2. Second Priority: sl75 (Highest numerical limit)
+      sl75 > 0 ~ 75,
+      
+      # 3. Third Priority: sl70
+      sl70 > 0 ~ 70,
+      
+      # 4. Fourth Priority: sl65
+      sl65 > 0 ~ 65,
+      
+      # 5. Lowest Priority: sl55
+      sl55 > 0 ~ 55,
+      
+      # Catch-all if no speed limit category is present (all are 0)
+      .default = NA_real_ 
+    ),
+    .before = sl55
+  ) %>%
+  mutate(
+    year_of_observation = case_when(
+      d80 == 1 ~ 1980, d81 == 1 ~ 1981, d82 == 1 ~ 1982, d83 == 1 ~ 1983, d84 == 1 ~ 1984,
+      d85 == 1 ~ 1985, d86 == 1 ~ 1986, d87 == 1 ~ 1987, d88 == 1 ~ 1988, d89 == 1 ~ 1989,
+      d90 == 1 ~ 1990, d91 == 1 ~ 1991, d92 == 1 ~ 1992, d93 == 1 ~ 1993, d94 == 1 ~ 1994,
+      d95 == 1 ~ 1995, d96 == 1 ~ 1996, d97 == 1 ~ 1997, d98 == 1 ~ 1998, d99 == 1 ~ 1999,
+      d00 == 1 ~ 2000, d01 == 1 ~ 2001, d02 == 1 ~ 2002, d03 == 1 ~ 2003, d04 == 1 ~ 2004
+    )) %>%
+  # BAC (Blood Alcohol Content) variables 
+  # These are also one-hot encoded, indicating the state's legal BAC limit.
+  # bac08 = 1 means the limit is 0.08, bac10 = 1 means the limit is 0.10, etc.
+  mutate(
+    legal_bac_limit = case_when(
+      bac08 == 1 ~ 0.08,
+      bac10 == 1 ~ 0.10,
+      .default = NA_real_ # capture any unclassified BAC limits
+    )
+  ) %>%
+
+  rename(
+    total_fatalities_rate = totfatrte, # Dependent variable: Traffic fatalities per 100 thousand population
+    zero_tolerance_law = zerotol,
+    per_se_law = perse,
+    total_fatalities = totfat,
+    total_night_fatalities = nghtfat,
+    total_weekend_fatalities = wkndfat,
+    total_fatalities_100m_miles = totfatpvm,
+    total_night_fatalities_100m_miles = nghtfatpvm,
+    total_weekend_fatalities_100m_miles = wkndfatpvm,
+    state_population = statepop, 
+    total_night_fatalities_rate = nghtfatrte,
+    total_weekend_fatalities_rate = wkndfatrte,
+    percent_pop_12_24 = perc14_24,
+    vmt_billion = vehicmiles,
+    vmt_per_capita = vehicmilespc
+  ) %>%
+  mutate(
+    state = factor(state),
+    year = as.integer(year_of_observation)
+  )
+
+```
+
+
+\newpage
+Re-estimate the **Expanded Model** from HW-11, now using fixed effects at the state level. 
+
+- What do you estimate for coefficients on the blood alcohol variables? How do the coefficients on the blood alcohol variables change, if at all? 
+- What do you estimate for coefficients on per se laws? How do the coefficients on per se laws change, if at all? 
+- What do you estimate for coefficients on primary seat-belt laws? How do the coefficients on primary seatbelt laws change, if at all? 
+
+**Answer**
+It wasn't stated explicitly if we are expected to **build on** the previous expanded model (two-way fixed-effects), **or revise** the model to include state fixed effect as did in async. I assume we are asked to do the latter.
+
+Hence the equation (before FE transformation):
+
+$$Y_{it} = \mathbf{X}_{it} \boldsymbol{\beta} + \gamma_i + \epsilon_{it}$$
+Where:$\mathbf{X}_{it}$ are the policy and economic variables (BAC, per se, seatbelt, etc.) The plm() packaged is used in the estimation.
+
+**In terms of results**
+
+**BAC limit**: The negative coefficient increased in magnitude to -1.673 (became more negative), suggesting a stronger life-saving effect when controlling for time-invariant state characteristics.
+
+**Per se law**: The coefficient increased in magnitude to -0.177 (became more negative) but remained statistically insignificant. The effect is small and not robust.
+
+**Seatbelt law**: The most notable change is the coefficient for Primary Seatbelt Law (sbprim), which dropped from $-0.490$ to $-0.173$. In the previous (expanded model) (Year Only), the effect of the seatbelt law was likely confounded with unobserved state characteristics (safer states have safer rules and culture ealier) The previous model might wrongly attributed state-level effects to the law.
+
+In the current model (State FE), the $\gamma_i$  are absorbed. The $-0.173$ coefficient isolates the effect of the change in the law within the same state, providing a more logical estimate of the policy's causal impact.
+
+```{r}
+model_fe <-
+  plm(data = df,
+     total_fatalities_rate ~ 
+       legal_bac_limit + 
+       per_se_law + 
+       sbprim + 
+       sbsecon + 
+       sl70plus + 
+       gdl + 
+       percent_pop_12_24 + 
+       unem + 
+       vmt_per_capita,
+     index = c("state", "year"),
+     model = "within")
+  
+# Display the model results in a tidy table
+fe_results <- tidy(model_fe)
+
+kable(
+  fe_results, 
+  digits = 3,
+  caption = "State FE Model Results"
+)
+```
+
+\newpage
+Which set of estimates do you think is more reliable? Why do you think this? 
+
+- What assumptions are needed in each of these models?  
+- Are these assumptions reasonable in the current context?
+
+**Answer**
+The estimates from the current model (State Fixed Effects) are more reliable than those from the previous model (Year Effects) for estimating the impact of policies that are adopted differently across states, because it controls for nnobserved heterogeneity ($\gamma_i$). 
+
+The current model controls for the time-invariant, unobserved state characteristics (e.g., population density, terrain, cultural attitudes towards drinking/driving, inherent quality of roads). These factors are highly correlated with both the fatality rate (the dependent variable) and the decision to adopt certain laws (the independent variables). 
+
+By removing the state-specific mean, the current model mitigates the OVB arising from persistent differences between states that are not captured by explicit regressors.
+
+**Assumptions**
+
+For the previous model's estimates to be consisetnt (and standard errors to be correct), **strict exogeneity** in that errors are **uncorrelated** with regressors for **all** time periods and the standard assumptions (iid, no perfect colinearity). Note that heteroskedasticity can be addressed by robust ses. 
+
+For the current model, the different assumption is that errors are uncorrelated with the regressors after accounting for the State Fixed Effects (they share the other standard assumptions): 
+
+$$E(u_{it} | \mathbf{X}_{it}, \gamma_i) = 0$$
+
+The assumptions for the current model are, to a large degree, reasonable. Hence the state FE model is preferred. 
+
+The assumptions for the previous models are not reasonable. It implies that a sudden change in the fatality rate (error term $\epsilon_{it}$) in one year does not cause a future change in policy, but policy/law is often reactive and endogenous.
+
+\newpage
+
+# (10 points) Consider a Random Effects Model 
+
+Instead of estimating a fixed effects model, should you have estimated a random effects model?
+
+- Please state the assumptions of a random effects model, and evaluate whether these assumptions are met in the data. 
+- If the assumptions are, in fact, met in the data, then estimate a random effects model and interpret the coefficients of this model. Comment on how, if at all, the estimates from this model have changed compared to the fixed effects model. 
+- If the assumptions are **not** met, then do not estimate the data. But, also comment on what the consequences would be if you were to *inappropriately* estimate a random effects model. Would your coefficient estimates be biased or not? Would your standard error estimates be biased or not? Or, would there be some other problem that might arise?
+
+-----------
+**Answer**
+
+The decision depends on one critical assumption regarding the relationship between the unobserved state characteristics ($\gamma_i$) and our policy variables ($\mathbf{X}_{it}$). The Random Effects ($\gamma_i$) must be **uncorrelated** with the regressors ($\mathbf{X}_{it}$) for **all time periods ($t$)**.
+
+$$\text{Cov}(\gamma_i, \mathbf{X}_{it}) = 0$$
+
+In terms of if this assumption is met, we can look at specific covariates. 
+
+**For blood alcohol content requiremtn (BAC) and per se law**, it is likely that there is high correlation (between x and $\gamma_i$). States with safer driving cultures or responsive political systems ($\gamma_i$) are more likely to be early adopters of stricter laws. Also, states that have stronger public safety culture ($\gamma_i$) are more likely to pass primary seatbelt laws. **This this constitutes violations of the key assumption for RE.**
+
+**So assumptions not met. Comment on the consequences of mistakenly estimated model**.
+
+  - $\beta$'s would be biased and not consistent (among reasons, the OVB where the effect of unobserved $\gamma_i$ is attributed to observed covariates).
+  - Standard errors would not be correct (likely underestimated).
+
+**Not asked in the problem but maybe important**. Of course in practice we can use the Hausman test (null being the RE assumption is met) to test them. And as mentioned in the async, it is useful to estimate all (pooled, FE, and RE) for useful information.
+
+\newpage
+# (10 points) Model Forecasts 
+
+The COVID-19 pandemic dramatically changed patterns of driving. Find data (and include this data in your analysis, here) that includes some measure of vehicle miles driven per capita in the US. Your data should at least cover the period from January 2018 to May 2023. With this data, produce the following statements: 
+
+- Comparing monthly miles driven in 2018 to the same months during the pandemic: 
+  - What month demonstrated the largest decrease in driving? How much, in percentage terms, lower was this driving? 
+  - What month demonstrated the largest increase in driving? How much, in percentage terms, higher was this driving? 
+
+----------
+**Answer**
+
+**Disclaimor** I used AI tools to search for data sources and drating code, but I went through every line, making sure understanding, making changes.
+
+```{r}
+?fredr
+my_fredr_key <- "3d30408b50dc19445e33c134e8c1af5d"
+#?fredr_set_key
+fredr_set_key(my_fredr_key)
+fredr_has_key()
+vmt <- fredr("TRFVOLUSM227NFWA", observation_start = as.Date("2018-01-01"))
+vmt
+
+# The vmt data is loaded above using fredr() 
+
+# 1. Prepare data: Extract Month and Year, pivot 2018 data to get monthly baseline
+vmt_prepared <- vmt %>%
+  mutate(
+    date = as.Date(date),
+    month_val = format(date, "%m"),
+    year_val = as.integer(format(date, "%Y"))
+  )
+#vmt_prepared
+
+# 2. Extract the 2018 monthly baseline VMT
+vmt_2018_baseline <- vmt_prepared %>%
+  filter(year_val == 2018) %>%
+  select(month_val, baseline_vmt = value)
+#vmt_2018_baseline
+
+# 3. Join the baseline to the full dataset (excluding 2018 itself) and calculate change
+vmt_changes <- vmt_prepared %>%
+  filter(year_val != 2018) %>%
+  left_join(vmt_2018_baseline, by = "month_val") %>%
+  mutate(
+    # Percentage change relative to the 2018 baseline for that month
+    percent_change = (value - baseline_vmt) / baseline_vmt * 100
+  )
+vmt_changes
+
+# Find Largest Decrease (COVID Bust) 
+largest_decrease <- vmt_changes %>%
+  filter(percent_change == min(percent_change, na.rm = TRUE)) %>%
+  slice(1) # Take the first if multiple exist
+
+#largest_decrease
+
+# Find Largest Increase (COVID Boom/Rebound) 
+# I look for the largest *positive* percentage change since the pandemic started.
+largest_increase <- vmt_changes %>%
+  filter(date > "2020-02-01") %>%
+  filter(percent_change == max(percent_change, na.rm = TRUE)) %>%
+  slice(1) # Take the first if multiple exist
+largest_increase
+# --- Output Statements ---
+cat("--- VMT Change Analysis (Relative to 2018 Baseline) ---\n")
+
+# Largest Decrease
+cat(
+  "\nLargest Decrease in Driving (COVID Bust):\n",
+  "Month/Year: ", format(largest_decrease$date, "%B %Y"), "\n",
+  "Percentage Lower: ", sprintf("%.2f%%", abs(largest_decrease$percent_change)),
+  " lower.\n"
+)
+
+# Largest Increase
+cat(
+  "\nLargest Increase in Driving (COVID Boom/Rebound):\n",
+  "Month/Year: ", format(largest_increase$date, "%B %Y"), "\n",
+  "Percentage Higher: ", sprintf("%.2f%%", largest_increase$percent_change),
+  " higher.\n"
+)
+
+# Store the boom and bust sizes for the next forecasting step
+covid_bust_size <- largest_decrease$percent_change[1] / 100
+covid_boom_size <- largest_increase$percent_change[1] / 100
+
+
+```
+\newpage
+Now, use these changes in driving to make forecasts from your models. 
+
+- Suppose that the number of miles driven per capita, increased by as much as the COVID boom. Using the FE estimates, what would the consequences be on the number of traffic fatalities? Please interpret the estimate.
+- Suppose that the number of miles driven per capita, decreased by as much as the COVID bust. Using the FE estimates, what would the consequences be on the number of traffic fatalities? Please interpret the estimate.
+
+----------
+**Answer**
+
+**Boom**
+A significant $\mathbf{5.82\%}$ increase in the state's VMT per capita (equivalent to $531$ additional miles per person annually) is predicted to cause an increase of $0.1339$ traffic fatalities per 100,000 population. This demonstrates that even moderate rises in driving volume—due to post-lockdown mobility or general economic activity—have a detectable, positive, and causal effect on the overall death toll, as captured by the within-state variation.
+
+**Bust**
+A severe $\mathbf{39.08\%}$ drop in VMT per capita (a reduction of $3,567$ miles per person) is predicted to cause a substantial decrease of $0.8992$ traffic fatalities per 100,000 population. This finding confirms the fundamental safety relationship: reducing exposure (miles driven) is the single most powerful factor for immediately reducing the absolute number of fatalities. The nearly one-fatality reduction per 100,000 population is a large effect driven entirely by the scale of the reduction in travel.
+
+```{r}
+# 1. Define Model Parameters and Shocks 
+
+# FE Coefficient for vmt_per_capita (Based on the State FE results earlier)
+# You MUST verify this value from your kable output for model_fe
+summary(model_fe)
+model_fe$coefficients["legal_bac_limit"]
+beta_vmt_pc <- model_fe$coefficients["vmt_per_capita"]
+
+# COVID Boom/Bust Sizes (from the previous VMT analysis)
+
+covid_bust_size 
+covid_boom_size 
+# Using the values from the executed VMT analysis for robustness:
+
+
+# 2. Calculate Sample Mean of the Regressor (vmt_per_capita) 
+# I need the average VMT per capita from the df dataset
+mean_vmt_pc <- mean(df$vmt_per_capita, na.rm = TRUE)
+
+# 3. Calculate Forecasted Change in Fatalities Rate (Delta Y) 
+# Scenario 1: COVID Boom (Increase in VMT)
+delta_x_boom <- mean_vmt_pc * covid_boom_size
+delta_y_boom <- beta_vmt_pc * delta_x_boom
+
+# Scenario 2: COVID Bust (Decrease in VMT)
+delta_x_bust <- mean_vmt_pc * covid_bust_size
+delta_y_bust <- beta_vmt_pc * delta_x_bust
+
+# 4. Output and Interpretation 
+
+cat("\n--- Forecast Interpretation Based on State FE Model ---\n")
+cat(sprintf("FE Coefficient for VMT per Capita (miles/person): %.3f\n", beta_vmt_pc))
+cat(sprintf("Mean VMT per Capita in Sample: %.2f miles/person\n", mean_vmt_pc))
+cat("----------------------------------------------------------\n")
+
+# Interpretation for Boom
+cat("\nScenario 1: COVID Boom (+", sprintf("%.2f%%", covid_boom_size * 100), " VMT)\n")
+cat(sprintf("   - Change in VMT per Capita (Delta X): +%.2f miles/person\n", delta_x_boom))
+cat(sprintf("   - Change in Fatalities Rate (Delta Y): +%.4f fatalities per 100k population\n", delta_y_boom))
+
+# Interpretation for Bust
+cat("\nScenario 2: COVID Bust (", sprintf("%.2f%%", covid_bust_size * 100), " VMT)\n")
+cat(sprintf("   - Change in VMT per Capita (Delta X): %.2f miles/person\n", delta_x_bust))
+cat(sprintf("   - Change in Fatalities Rate (Delta Y): %.4f fatalities per 100k population\n", delta_y_bust))
+
+# Store the change values for the report text
+forecast_boom_change <- delta_y_boom
+forecast_bust_change <- delta_y_bust
+```
+
+
+# (5 points) Evaluate Error 
+
+If there were serial correlation or heteroskedasticity in the idiosyncratic errors of the model, what would be the consequences on the estimators and their standard errors? Is there any serial correlation or heteroskedasticity? 
