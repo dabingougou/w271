@@ -15,7 +15,7 @@ library(knitr)
 library(plm)
 library(lmtest)
 
-install.packages("fredr")
+#install.packages("fredr")
 library(fredr)
 ```
 
@@ -32,6 +32,7 @@ load(file="./data/driving.RData")
 ```
 \newpage
 # (15 points) State-Level Fixed Effects 
+
 
 **Answer**
 
@@ -112,6 +113,7 @@ Re-estimate the **Expanded Model** from HW-11, now using fixed effects at the st
 - What do you estimate for coefficients on per se laws? How do the coefficients on per se laws change, if at all? 
 - What do you estimate for coefficients on primary seat-belt laws? How do the coefficients on primary seatbelt laws change, if at all? 
 
+
 **Answer**
 It wasn't stated explicitly if we are expected to **build on** the previous expanded model (two-way fixed-effects), **or revise** the model to include state fixed effect as did in async. I assume we are asked to do the latter.
 
@@ -162,6 +164,7 @@ Which set of estimates do you think is more reliable? Why do you think this?
 - What assumptions are needed in each of these models?  
 - Are these assumptions reasonable in the current context?
 
+
 **Answer**
 The estimates from the current model (State Fixed Effects) are more reliable than those from the previous model (Year Effects) for estimating the impact of policies that are adopted differently across states, because it controls for nnobserved heterogeneity ($\gamma_i$). 
 
@@ -191,7 +194,7 @@ Instead of estimating a fixed effects model, should you have estimated a random 
 - If the assumptions are, in fact, met in the data, then estimate a random effects model and interpret the coefficients of this model. Comment on how, if at all, the estimates from this model have changed compared to the fixed effects model. 
 - If the assumptions are **not** met, then do not estimate the data. But, also comment on what the consequences would be if you were to *inappropriately* estimate a random effects model. Would your coefficient estimates be biased or not? Would your standard error estimates be biased or not? Or, would there be some other problem that might arise?
 
------------
+
 **Answer**
 
 The decision depends on one critical assumption regarding the relationship between the unobserved state characteristics ($\gamma_i$) and our policy variables ($\mathbf{X}_{it}$). The Random Effects ($\gamma_i$) must be **uncorrelated** with the regressors ($\mathbf{X}_{it}$) for **all time periods ($t$)**.
@@ -218,20 +221,21 @@ The COVID-19 pandemic dramatically changed patterns of driving. Find data (and i
   - What month demonstrated the largest decrease in driving? How much, in percentage terms, lower was this driving? 
   - What month demonstrated the largest increase in driving? How much, in percentage terms, higher was this driving? 
 
-----------
+
 **Answer**
 
 **Disclaimor** I used AI tools to search for data sources and drating code, but I went through every line, making sure understanding, making changes.
 
 ```{r}
-?fredr
-my_fredr_key <- "3d30408b50dc19445e33c134e8c1af5d"
+#?fredr
+#my_fredr_key <- "3d30408b50dc19445e33c134e8c1af5d"
 #?fredr_set_key
-fredr_set_key(my_fredr_key)
-fredr_has_key()
-vmt <- fredr("TRFVOLUSM227NFWA", observation_start = as.Date("2018-01-01"))
-vmt
-
+#fredr_set_key(my_fredr_key)
+#fredr_has_key()
+#vmt <- fredr("TRFVOLUSM227NFWA", observation_start = as.Date("2018-01-01"))
+#vmt
+#save(vmt, file = "vmt_data.RData")
+load("vmt_data.RData")
 # The vmt data is loaded above using fredr() 
 
 # 1. Prepare data: Extract Month and Year, pivot 2018 data to get monthly baseline
@@ -295,23 +299,28 @@ cat(
 # Store the boom and bust sizes for the next forecasting step
 covid_bust_size <- largest_decrease$percent_change[1] / 100
 covid_boom_size <- largest_increase$percent_change[1] / 100
-
-
 ```
+
 \newpage
+
 Now, use these changes in driving to make forecasts from your models. 
 
 - Suppose that the number of miles driven per capita, increased by as much as the COVID boom. Using the FE estimates, what would the consequences be on the number of traffic fatalities? Please interpret the estimate.
 - Suppose that the number of miles driven per capita, decreased by as much as the COVID bust. Using the FE estimates, what would the consequences be on the number of traffic fatalities? Please interpret the estimate.
 
-----------
+
 **Answer**
 
+**Note**
+In choosing boom, I have excluded Jan and Feb of 2020 which happen to have risen a lot from 2018 levels. This maybe people's initial response to the start of COVID. 
+
+With that, the biggest drop was in April 2020 (-39.08%), and the biggest increase (POST pandemic) was in Feb 2024 (+5.82%).
+
 **Boom**
-A significant $\mathbf{5.82\%}$ increase in the state's VMT per capita (equivalent to $531$ additional miles per person annually) is predicted to cause an increase of $0.1339$ traffic fatalities per 100,000 population. This demonstrates that even moderate rises in driving volume—due to post-lockdown mobility or general economic activity—have a detectable, positive, and causal effect on the overall death toll, as captured by the within-state variation.
+A $\mathbf{5.82\%}$ increase in the VMT per capita is predicted to cause an increase of $0.1339$ traffic fatalities per 100,000 population. This demonstrates that even moderate rises in driving volume—due to post-lockdown mobility or general economic activity—have a positive effect on the overall death toll.
 
 **Bust**
-A severe $\mathbf{39.08\%}$ drop in VMT per capita (a reduction of $3,567$ miles per person) is predicted to cause a substantial decrease of $0.8992$ traffic fatalities per 100,000 population. This finding confirms the fundamental safety relationship: reducing exposure (miles driven) is the single most powerful factor for immediately reducing the absolute number of fatalities. The nearly one-fatality reduction per 100,000 population is a large effect driven entirely by the scale of the reduction in travel.
+A $\mathbf{39.08\%}$ drop in VMT per capita is predicted to cause a decrease of $0.8992$ traffic fatalities per 100,000 population. This means that the model predicts reducing miles driven reduce fatalities.
 
 ```{r}
 # 1. Define Model Parameters and Shocks 
@@ -364,7 +373,26 @@ forecast_boom_change <- delta_y_boom
 forecast_bust_change <- delta_y_bust
 ```
 
-
+\newpage
 # (5 points) Evaluate Error 
 
 If there were serial correlation or heteroskedasticity in the idiosyncratic errors of the model, what would be the consequences on the estimators and their standard errors? Is there any serial correlation or heteroskedasticity? 
+
+If the idiosyncratic errors exhibit serial correlation or heteroskedasticity, the FE point estimates **remain unbiased and consistent** under strict exogeneity, **but** the usual OLS standard errors are no longer valid and usually understate the true uncertainty. In our homework panel, both heteroskedasticity and within-state serial correlation are very likely, and tests (from live sessions, Wooldridge’s test for serial correlation and Breusch–Pagan for heteroskedasticity) can be applied to the FE residuals. To get valid inference, I rely on state-clustered robust standard errors for the FE model (shown below).
+
+The test results show that FE (OLS) standard errors are not correct. They understate uncertainty, inflate t-statistics, and statistical significance. The coefficients remain consistent (under strict exogeneity), but inference must rely on state-clustered robust SEs (last table).
+```{r}
+## 1. Test for serial correlation in FE residuals (Wooldridge-type test)
+pwartest(model_fe)   # Wooldridge test
+
+pbgtest(model_fe)    # Breusch–Godfrey-type test for panel models
+
+## 2. Test for heteroskedasticity in FE residuals (Breusch–Pagan)
+bptest(model_fe)     # applied to a plm object
+
+# Cluster-robust VCOV at the state level
+vcov_state <- vcovHC(model_fe, type = "HC1", cluster = "group")
+
+# Coefficients with cluster-robust SEs
+coeftest(model_fe, vcov = vcov_state)
+```
